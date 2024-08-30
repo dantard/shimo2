@@ -4,6 +4,9 @@ from PyQt5.QtCore import Qt, QTimer, QRectF, QTime
 from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsView, QGraphicsScene
 from PyQt5.QtGui import QPixmap, QPainter, QFont
 
+from database import Database
+from downloader import Downloader
+
 
 class ImageWindow(QMainWindow):
     BLUR_IN = 0
@@ -70,11 +73,23 @@ class ImageWindow(QMainWindow):
         self.clock_timer.timeout.connect(self.update_clock)
         self.clock_timer.start(900)
 
+        self.db = Database()
+        self.dw = Downloader(self.db)
+        self.dw.start()
+
         QTimer.singleShot(2000, self.choose)
 
     def choose(self):
-        self.index = (self.index + 1) % len(self.images)
-        self.set_picture(self.images[self.index])
+        index = self.dw.get(False)
+        if index:
+            folder, file = self.db.get_name_from_id(index)
+            print("riiririr", "cache/" + folder + "/" + file)
+            if file!="":
+                self.set_picture(QPixmap("cache/" + folder + "/" + file))
+            else:
+                QTimer.singleShot(1000, self.choose)
+        else:
+            QTimer.singleShot(1000, self.choose)
 
     def update_clock(self):
         self.time.setText(QTime.currentTime().toString("hh:mm"))
