@@ -4,6 +4,7 @@ import subprocess
 
 # Connect to the database (or create it if it doesn't exist)
 import sys
+import time
 
 from downloader import Downloader
 
@@ -25,8 +26,9 @@ class Database:
             hash TEXT NOT NULL,
             touched INTEGER,
             UNIQUE(album,file)
-        )
-        ''')
+        )''')
+
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS sequence (id INTEGER, date float)''')
 
         # Commit the changes
         self.connection.commit()
@@ -56,6 +58,21 @@ class Database:
 
             # Commit the changes
             self.connection.commit()
+
+    def insert_recent(self, id):
+        self.cursor.execute('''DELETE FROM sequence
+            WHERE id NOT IN (
+            SELECT id
+            FROM sequence
+            ORDER BY date DESC
+            LIMIT 3
+        );''')
+        self.cursor.execute('''INSERT INTO sequence (id, date) VALUES (?, ?)''', (id,time.time()))
+        self.connection.commit()
+
+    def get_recent_ids(self):
+        ids = self.cursor.execute('SELECT id FROM sequence')
+        return [x[0] for x in ids.fetchall()]
 
     def update_by_album(self):
         # get all the albums from the database
@@ -100,8 +117,18 @@ class Database:
         connection = sqlite3.connect('my_database.db')
         cursor = connection.cursor()
         # get all ids from the database
-        name = cursor.execute('SELECT album, file FROM my_table WHERE id = ?', (index,))
+        name = cursor.execute('SELECT album, file, hash FROM my_table WHERE id = ?', (index,))
         result = name.fetchone()
-        print("result", result)
         connection.close()
         return result
+
+    def get_album_from_hash(self, hash):
+        connection = sqlite3.connect('my_database.db')
+        cursor = connection.cursor()
+        # get all ids from the database
+        name = cursor.execute('SELECT album FROM my_table WHERE hash = ?', (hash,))
+        result = name.fetchone()
+        connection.close()
+        return result
+
+
