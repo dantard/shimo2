@@ -1,8 +1,9 @@
 import sys
+import threading
 import time
 
 from PyQt5 import QtGui
-from PyQt5.QtCore import Qt, QTimer, QRectF, QTime
+from PyQt5.QtCore import Qt, QTimer, QRectF, QTime, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsView, QGraphicsScene, QMenu
 from PyQt5.QtGui import QPixmap, QPainter, QFont
 from rclone_python import rclone
@@ -21,6 +22,8 @@ class ImageWindow(QMainWindow):
     WAITING = 3
     BLUR_OUT = 4
     DONE = 255
+
+    updating = pyqtSignal(str, int,int,int,int)
 
     def __init__(self):
         super().__init__()
@@ -44,9 +47,9 @@ class ImageWindow(QMainWindow):
         self.setMinimumSize(800, 600)
 
         self.state = ImageWindow.BEGIN
-        self.blur_in = True
-        self.blur_out = True
-        self.zoom_type = 2
+        self.blur_in = False
+        self.blur_out = False
+        self.zoom_type = 0
         self.index = 0
         self.elapsed = 0
 
@@ -55,9 +58,13 @@ class ImageWindow(QMainWindow):
         self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self.time = self.scene.addSimpleText("00:00")
+        self.info = self.scene.addSimpleText("")
         # Change clock font size and color
         self.time.setFont(QFont("Arial", 40))
         self.time.setBrush(Qt.white)
+
+        self.info.setFont(QFont("Arial", 20))
+        self.info.setBrush(Qt.white)
 
         # Change color, size and position of the title
         self.title = self.scene.addSimpleText("Image Viewer")
@@ -65,25 +72,31 @@ class ImageWindow(QMainWindow):
         self.title.setFont(QFont("Arial", 40))
         self.title.setBrush(Qt.white)
 
+        self.db = Database()
+        self.dw = Downloader(self.db)
+        self.dw.start()
+
         self.effects_timer = QTimer()
         self.effects_timer.timeout.connect(self.process)
 
         self.clock_timer = QTimer()
         self.clock_timer.timeout.connect(self.update_clock)
-        self.clock_timer.start(900)
-
-        self.db = Database()
-        self.dw = Downloader(self.db)
-        self.dw.start()
+        self.clock_timer.start(1000)
+        self.updating.connect(self.update_progress)
 
         self.choose()
+
+    def update_progress(self, name, i, n, j, m):
+        if i == 0 and n == 0 and j == 0 and m == 0:
+            self.info.setText("")
+        else:
+            self.info.setText(f"Updating {i}/{n} {j}/{m} ({name})")
 
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:
         menu = QMenu(self)
         menu.addAction("Fullscreen", self.toggle_fullscreen)
         # menu.addAction("Settings", self.edit_config)
-        menu.addAction("Add remotes", self.add_remotes)
-        menu.addAction("Edit Selection", self.edit_selection)
+        menu.addAction("Edit remotes", self.edit_selection)
         menu.addSeparator()
 
         menu.exec_(event.globalPos())
@@ -92,30 +105,42 @@ class ImageWindow(QMainWindow):
         dialog = RemoteDialog(self.db, self)
         if dialog.exec():
             result = dialog.get_result()
-            for remote, vector in result.items():
-                for album, active in vector:
-                    if active:
-                        self.db.update_album(remote, album)
-                    else:
-                        self.db.remove_album(remote, album)
 
-                    self.db.update_album_active(remote, album, active)
+            def update_async(result1):
+                i, j = 1, 1
+                for remote, vector in result1.items():
+                    for album, active in vector:
 
-            self.dw.shuffle()
+                        print("updating album", album, "active", active)
+                        if active:
+                            self.updating.emit(album, i, len(result1), j, len(vector))
+                            self.db.update_album(remote, album)
+                            j += 1
+                        else:
+                            self.db.remove_album(remote, album)
 
-    def add_remotes(self):
-        dialog = SelectRemote(rclone.get_remotes(), self)
-        if dialog.exec_():
-            remote = dialog.get_selected()
-            if remote == "New":
-                remote_name = dialog.get_remote_name().replace(":", "")
-                rclone.create_remote(remote_name, RemoteTypes.google_photos)
-                remote = remote_name + ":"
-            self.pd = Progressing(self, title="Syncing")
-            self.pd.start(lambda : self.db.update_remote(remote, 0))
+                        self.db.update_album_active(remote, album, active)
 
-            #dialog = RemoteDialog(self.db, self)
-            #dialog.exec_()
+                    i += 1
+
+                self.dw.shuffle()
+                self.updating.emit("Done", 0,0,0,0)
+
+            threading.Thread(target=update_async, args=(result,)).start()
+
+    # def add_remotes(self):
+    #     dialog = SelectRemote(rclone.get_remotes(), self)
+    #     if dialog.exec_():
+    #         remote = dialog.get_selected()
+    #         if remote == "New":
+    #             remote_name = dialog.get_remote_name().replace(":", "")
+    #             rclone.create_remote(remote_name, RemoteTypes.google_photos)
+    #             remote = remote_name + ":"
+    #         self.pd = Progressing(self, title="Syncing")
+    #         self.pd.start(lambda : self.db.update_remote(remote, 0))
+    #
+    #         #dialog = RemoteDialog(self.db, self)
+    #         #dialog.exec_()
 
     def toggle_fullscreen(self):
 
@@ -124,31 +149,40 @@ class ImageWindow(QMainWindow):
         else:
             self.showFullScreen()
 
+    def retry(self):
+        QTimer.singleShot(0, self.choose)
+
     def choose(self):
+        print("choose")
+
+        if self.dw.photos.empty():
+            self.dw.shuffle(False)
+
         index = self.dw.get(False)
-        if index:
+        if index is None:
+            return self.retry()
 
-            info = self.db.get_name_from_id(index)
-            if info is not None:
+        info = self.db.get_name_from_id(index)
 
-                remote, folder, file, hash = info
-                albums = self.db.get_album_from_hash(hash)
+        if info is None:
+            return self.retry()
 
-                if "{" in folder:
-                    folder = folder.split("{")[0]
+        remote, folder, file, hash = info
+        albums = self.db.get_album_from_hash(hash)
 
-                if file.lower().endswith(".heic"):
-                    file += ".jpg"
+        if file.lower().endswith(".heic"):
+            file += ".jpg"
 
-                try:
-                    self.set_picture(QPixmap("cache/" + folder + "/" + file))
-                    self.title.setText("\n".join(albums))
-                    self.db.insert_recent(index)
-                    return
-                except Exception as e:
-                    print("EXCEPTION", e)
+        pixmap = QPixmap("cache/" + folder + "/" + file)
 
-        QTimer.singleShot(1000, self.choose)
+        if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
+            return self.retry()
+
+        print("set kimage", folder, file, index)
+        self.set_picture(pixmap)
+        self.title.setText("\n".join(albums) + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
+        self.db.insert_recent(index)
+
 
     def update_clock(self):
         self.time.setText(QTime.currentTime().toString("hh:mm"))
@@ -196,6 +230,8 @@ class ImageWindow(QMainWindow):
     def set_time_pos(self):
         self.time.setPos(self.scene.sceneRect().width() - self.time.boundingRect().width() - 20,
                          self.scene.sceneRect().height() - self.time.boundingRect().height() - 15)
+        self.info.setPos(20, self.scene.sceneRect().height() - self.info.boundingRect().height() - 30)
+
 
     def center_image(self):
         w, h = self.pixmap.pixmap().width(), self.pixmap.pixmap().height()
@@ -224,7 +260,9 @@ class ImageWindow(QMainWindow):
                 self.state = ImageWindow.WAITING
 
         elif self.state == ImageWindow.WAITING:
-            if time.time() - self.elapsed > 10 and not self.dw.queue.empty():
+            print(time.time() - self.elapsed, self.state)
+            if time.time() - self.elapsed > 2 and not self.dw.queue.empty():
+                print("preeeeeeeeee")
                 self.state = ImageWindow.BLUR_OUT
 
         elif self.state == ImageWindow.BLUR_OUT:

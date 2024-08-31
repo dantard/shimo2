@@ -11,45 +11,44 @@ class Downloader:
         self.queue_size = 3
         self.db = database
         self.queue = queue.Queue(self.queue_size)
-        self.photos = []
+        self.photos = queue.Queue()
 
-    def shuffle(self):
+    def shuffle(self, clear=True):
         # empty the queue
-        while not self.queue.empty():
-            self.queue.get()
+        if clear:
+            while not self.queue.empty():
+                self.queue.get()
 
-        self.photos = self.db.get_ids()
-        random.shuffle(self.photos)
+            while not self.photos.empty():
+                self.photos.get()
+
+        ids = self.db.get_ids()
+        random.shuffle(ids)
+
+        for id in ids:
+            self.photos.put(id)
 
     def start(self):
+        # fill the queue with the recent ids
+        # to have something to show
+        #for idx in self.db.get_recent_ids():
+            #print("Adding", idx, "to queue")
+         #    self.photos.put(idx)
 
-        self.shuffle()
-
-        ids = self.db.get_recent_ids()
-        for id in ids[:self.queue_size]:
-            self.queue.put(id)
-
-        # start the 3 task
+        # start the 5 producer tasks
         for i in range(5):
-            t = threading.Thread(target=self.task, args=(i,))
-            t.start()
+            threading.Thread(target=self.task, args=(i,)).start()
 
     def get(self, block=True):
         if not block and self.queue.empty():
             return None
         return self.queue.get()
 
-
-
     def task(self, ids):
         while True:
             print("TASK ", ids, "RUNNING")
-            time.sleep(1)
 
-            if len(self.photos) == 0:
-                continue
-
-            index = self.photos.pop(0)
+            index = self.photos.get()
             remote, folder, file, hash = self.db.get_name_from_id(index)
 
             if file == "":

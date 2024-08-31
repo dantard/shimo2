@@ -9,6 +9,8 @@ from rclone_python import rclone
 
 from rclone_python.remote_types import RemoteTypes
 
+from progressing import Progressing
+
 
 class SelectRemote(QDialog):
     def __init__(self, options, parent=None):
@@ -89,15 +91,15 @@ class RemoteDialog(QDialog):
         buttonBox1 = QPushButton("Ok")
         buttonBox1.clicked.connect(self.accept)
         buttonBox2 = QPushButton("Add Remote")
-        #buttonBox2.clicked.connect(self.add_remote)
+        buttonBox2.clicked.connect(self.add_remote)
         buttonBox3 = QPushButton("Add Folder")
         buttonBox3.clicked.connect(self.add_folder)
         self.remove_button = QPushButton("Remove")
-        #self.remove_button.clicked.connect(self.remove_remote)
+        # self.remove_button.clicked.connect(self.remove_remote)
         self.remove_button.setEnabled(False)
 
         self.update_button = QPushButton("Update")
-        #self.update_button.clicked.connect(self.forced_update)
+        self.update_button.clicked.connect(self.update_remote)
 
         cancelButton = QPushButton("Cancel")
         cancelButton.clicked.connect(self.reject)
@@ -112,22 +114,65 @@ class RemoteDialog(QDialog):
         layout.addLayout(layout2)
         layout.addWidget(buttonBox1)
         # layout.addWidget(cancelButton)
-        #self.treeWidget.itemClicked.connect(self.item_clicked)
+        # self.treeWidget.itemClicked.connect(self.item_clicked)
 
         # Set the layout for the dialog
         self.setLayout(layout)
         self.populate()
+
+    def add_remote(self):
+        dialog = SelectRemote(rclone.get_remotes(), self)
+        if dialog.exec_():
+            remote = dialog.get_selected()
+            if remote == "New":
+                remote_name = dialog.get_remote_name().replace(":", "")
+                rclone.create_remote(remote_name, RemoteTypes.google_photos)
+                remote = remote_name + ":"
+
+            self.pd = Progressing(self, title="Syncing")
+
+            def update():
+                self.db.update_remote(remote, 0)
+                self.populate()
+
+            self.pd.start(update)
+
+    def update_remote(self):
+        selected = self.treeWidget.selectedItems()
+        if len(selected) == 1:
+            if selected[0].parent() is None:
+                remote = selected[0].text(0)
+
+        self.pd = Progressing(self, title="Syncing")
+
+        def update():
+            self.db.update_remote(remote, 0)
+            self.populate()
+
+        self.pd.start(update)
 
     def populate(self):
         self.treeWidget.clear()
         for remote in self.db.get_remotes():
             item = QTreeWidgetItem([remote, ""])
             self.treeWidget.addTopLevelItem(item)
+
+            cb = QCheckBox()
+            cb.setContentsMargins(15, 0, 0, 0)
+            self.treeWidget.setItemWidget(item, 1, cb)
+            cb.stateChanged.connect(lambda state, item=item: self.check_all(item))
+            all_active = True
             for remote, title, active in self.db.get_albums(remote):
                 album_item = QTreeWidgetItem([title, ""])
                 item.addChild(album_item)
                 album_item.setCheckState(1, Qt.Checked if active else Qt.Unchecked)
+                all_active = all_active and active
 
+            cb.setCheckState(Qt.Checked if all_active else Qt.Unchecked)
+
+    def check_all(self, item):
+        for i in range(item.childCount()):
+            item.child(i).setCheckState(1, Qt.Checked if self.sender().isChecked() else Qt.Unchecked)
 
     def get_result(self):
         result = {}
@@ -140,11 +185,8 @@ class RemoteDialog(QDialog):
                 result[remote].append((album, active))
         return result
 
-
-
     def add_folder(self):
         pass
-
 
 
 '''

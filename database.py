@@ -9,6 +9,43 @@ import time
 from downloader import Downloader
 
 
+class Cursor:
+    def __init__(self):
+        self.connection = sqlite3.connect('my_database.db')
+        self.cursor = self.connection.cursor()
+
+    def execute(self, *args, commit=False, close=False):
+        ret = self.cursor.execute(*args)
+        if commit:
+            self.connection.commit()
+        if close:
+            self.connection.close()
+        return ret
+
+    def fetch_all(self, *args, close=False):
+        self.cursor.execute(*args)
+        result = self.cursor.fetchall()
+        if close:
+            self.connection.close()
+        return result
+
+    def fetch_one(self, *args, close=False):
+        self.cursor.execute(*args)
+        result = self.cursor.fetchone()
+        if close:
+            self.connection.close()
+        return result
+
+    def commit(self):
+        self.connection.commit()
+
+    def close(self, commit=False):
+        self.cursor.close()
+        if commit:
+            self.connection.commit()
+        self.connection.close()
+
+
 class Database:
 
     def __init__(self):
@@ -41,90 +78,58 @@ class Database:
         result = subprocess.run(['rclone', "lsf", remote + "album", "--max-depth", "1", "--format", "pi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True)
 
-        self.cursor.execute('''UPDATE albums SET touched = ? where remote = ?''', (0, remote))
+        cursor = Cursor()
+        cursor.execute('''UPDATE albums SET touched = ? where remote = ?''', (0, remote))
 
         for line in result.stdout.splitlines():
             print(line)
             album, hash = line.split(";")
 
-            self.cursor.execute('''INSERT INTO albums (remote, title, active, touched)
+            cursor.execute('''INSERT INTO albums (remote, title, active, touched)
                      VALUES (?, ?, ?, ?)
                      ON CONFLICT(remote, title) DO UPDATE SET touched = 1''', (remote, album.replace("/", ""), 0, 1))
 
         # select all the untouched albums
-        albums = self.cursor.execute('''SELECT remote, title FROM albums WHERE touched = 0 and remote = ?''', (remote,))
+        albums = cursor.fetch_all('SELECT remote, title FROM albums WHERE touched = 0 and remote = ?', (remote,))
 
         # delete all the images from my_table of remove album
-        for remote, title in albums.fetchall():
-            self.cursor.execute('''DELETE FROM my_table WHERE remote = ? and album = ?''', (remote, title))
+        for remote, title in albums:
+            cursor.execute('DELETE FROM my_table WHERE remote = ? and album = ?', (remote, title))
 
         # Delete the albums that are not in the remote anymore
-        self.cursor.execute('''DELETE FROM albums WHERE touched = 0 and remote = ?''', (remote,))
+        cursor.execute('DELETE FROM albums WHERE touched = 0 and remote = ?', (remote,))
 
-
-        self.connection.commit()
+        cursor.close(commit=True)
 
     def get_albums(self, remote):
-        albums = self.cursor.execute('''
-        SELECT remote, title, active
-        FROM albums WHERE remote = ?
-        ''', (remote,))
-
-        return albums.fetchall()
+        return Cursor().fetch_all('SELECT remote, title, active FROM albums WHERE remote = ?', (remote,), close=True)
 
     def get_remotes(self):
-        remotes = self.cursor.execute('''SELECT DISTINCT remote FROM albums''')
-        return [x[0] for x in remotes.fetchall()]
-
-    # def update_full(self):
-    #     result = subprocess.run(['rclone', "lsf", "gphoto:album", "--max-depth", "2", "--format", "pi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    #                             text=True)
-    #
-    #     self.cursor.execute('''UPDATE my_table SET touched = ?''', (0,))
-    #     self.connection.commit()
-    #
-    #     for line in result.stdout.splitlines():
-    #         parts = line.split(";")
-    #         path = parts[0]
-    #         hash = parts[1]
-    #         folder, filename = path.split("/")
-    #         if filename:
-    #             print(folder, filename, hash)
-    #
-    #         self.cursor.execute('''INSERT INTO my_table (album, file, hash, touched)
-    #                 VALUES (?, ?, ?, ?)
-    #                 ON CONFLICT(album,file) DO UPDATE SET touched = 1''', (folder, filename, hash, 1))
-    #
-    #         self.connection.commit()
-    #
-    #         self.cursor.execute('''DELETE FROM my_table WHERE touched = 0''')
-    #
-    #         # Commit the changes
-    #         self.connection.commit()
+        remotes = Cursor().fetch_all('SELECT DISTINCT remote FROM albums', close=True)
+        return [x[0] for x in remotes]
 
     def insert_recent(self, id):
-        self.cursor.execute('''DELETE FROM sequence
+        cursor = Cursor()
+        cursor.execute('''DELETE FROM sequence
             WHERE id NOT IN (
             SELECT id
             FROM sequence
             ORDER BY date DESC
-            LIMIT 3
+            LIMIT 10
         );''')
-        self.cursor.execute('''INSERT INTO sequence (id, date) VALUES (?, ?)''', (id, time.time()))
-        self.connection.commit()
+        cursor.execute('INSERT INTO sequence (id, date) VALUES (?, ?)', (id, time.time()), commit=True, close=True)
+
 
     def get_recent_ids(self):
-        ids = self.cursor.execute('SELECT id FROM sequence')
-        return [x[0] for x in ids.fetchall()]
+        ids = Cursor().fetch_all('SELECT id FROM sequence', close=True)
+        return [x[0] for x in ids]
 
     def remove_album(self, remote, album):
         # Delete from my_table all the file of the specified album
-        self.cursor.execute('''DELETE FROM my_table WHERE remote = ? AND album = ?''', (remote, album))
-        self.connection.commit()
+        Cursor().execute('DELETE FROM my_table WHERE remote = ? AND album = ?', (remote, album), commit=True, close=True)
 
     def update_album_active(self, remote, album, active):
-        self.cursor.execute('''UPDATE albums SET active = ? where remote = ? and title = ?''', (active, remote, album))
-        self.connection.commit()
+        Cursor().execute('UPDATE albums SET active = ? where remote = ? and title = ?', (active, remote, album), commit=True, close=True)
 
     def update_album(self, remote, album):
 
@@ -134,41 +139,26 @@ class Database:
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
                                 text=True)
+        cursor = Cursor()
 
         for line in result.stdout.splitlines():
-            parts = line.split(";")
-            filename = parts[0]
-            hash = parts[1]
 
-            self.cursor.execute('''INSERT INTO my_table (remote, album, file, hash, touched) VALUES (?, ?, ?, ?, ?)
+            filename, hash = line.split(";")
+
+            cursor.execute('''INSERT INTO my_table (remote, album, file, hash, touched) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(album,file) DO UPDATE SET touched = 1''', (remote, album, filename, hash, 1))
+            cursor.execute('DELETE FROM my_table WHERE touched = 0')
 
-            self.connection.commit()
-
-            self.cursor.execute('''DELETE FROM my_table WHERE touched = 0''')
-
-            # Commit the changes
-            self.connection.commit()
+        cursor.close(True)
 
     def get_ids(self):
-        # get all ids from the database
-        ids = self.cursor.execute('SELECT DISTINCT id FROM my_table')
-        return [x[0] for x in ids.fetchall()]
+        ids = Cursor().fetch_all('SELECT DISTINCT id FROM my_table', close=True)
+        return [x[0] for x in ids]
 
     def get_name_from_id(self, index):
-        connection = sqlite3.connect('my_database.db')
-        cursor = connection.cursor()
-        # get all ids from the database
-        name = cursor.execute('SELECT remote, album, file, hash FROM my_table WHERE id = ?', (index,))
-        result = name.fetchone()
-        connection.close()
+        result = Cursor().fetch_one('SELECT remote, album, file, hash FROM my_table WHERE id = ?', (index,), close=True)
         return result
 
     def get_album_from_hash(self, hash):
-        connection = sqlite3.connect('my_database.db')
-        cursor = connection.cursor()
-        # get all ids from the database
-        name = cursor.execute('SELECT album FROM my_table WHERE hash = ?', (hash,))
-        result = name.fetchone()
-        connection.close()
+        result = Cursor().fetch_one('SELECT album FROM my_table WHERE hash = ?', (hash,), close=True)
         return result
