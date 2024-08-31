@@ -13,9 +13,17 @@ class Downloader:
         self.queue = queue.Queue(self.queue_size)
         self.photos = []
 
-    def start(self):
+    def shuffle(self):
+        # empty the queue
+        while not self.queue.empty():
+            self.queue.get()
+
         self.photos = self.db.get_ids()
         random.shuffle(self.photos)
+
+    def start(self):
+
+        self.shuffle()
 
         ids = self.db.get_recent_ids()
         for id in ids[:self.queue_size]:
@@ -31,6 +39,8 @@ class Downloader:
             return None
         return self.queue.get()
 
+
+
     def task(self, ids):
         while True:
             print("TASK ", ids, "RUNNING")
@@ -40,7 +50,7 @@ class Downloader:
                 continue
 
             index = self.photos.pop(0)
-            folder, file, hash = self.db.get_name_from_id(index)
+            remote, folder, file, hash = self.db.get_name_from_id(index)
 
             if file == "":
                 continue
@@ -62,7 +72,7 @@ class Downloader:
             # create directory folder
             os.makedirs(cache_folder, exist_ok=True)
 
-            result = subprocess.run(['rclone', "copy", "gphoto:album/" + folder + "/" + file, cache_folder],
+            result = subprocess.run(['rclone', "copy", remote + "album/" + folder + "/" + file, cache_folder],
                                     stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE,
                                     text=True)

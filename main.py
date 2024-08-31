@@ -5,9 +5,13 @@ from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QTimer, QRectF, QTime
 from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsView, QGraphicsScene, QMenu
 from PyQt5.QtGui import QPixmap, QPainter, QFont
+from rclone_python import rclone
+from rclone_python.remote_types import RemoteTypes
 
 from database import Database
+from dialogs import RemoteDialog, SelectRemote
 from downloader import Downloader
+from progressing import Progressing
 
 
 class ImageWindow(QMainWindow):
@@ -37,7 +41,7 @@ class ImageWindow(QMainWindow):
         self.view.setBackgroundBrush(Qt.black)
         self.view.setFrameShape(QGraphicsView.NoFrame)
 
-        self.setMinimumSize(200, 100)
+        self.setMinimumSize(800, 600)
 
         self.state = ImageWindow.BEGIN
         self.blur_in = True
@@ -77,13 +81,44 @@ class ImageWindow(QMainWindow):
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:
         menu = QMenu(self)
         menu.addAction("Fullscreen", self.toggle_fullscreen)
-        #menu.addAction("Settings", self.edit_config)
-        #menu.addAction("Manage remotes", self.manage_remotes)
+        # menu.addAction("Settings", self.edit_config)
+        menu.addAction("Add remotes", self.add_remotes)
+        menu.addAction("Edit Selection", self.edit_selection)
         menu.addSeparator()
 
         menu.exec_(event.globalPos())
 
+    def edit_selection(self):
+        dialog = RemoteDialog(self.db, self)
+        if dialog.exec():
+            result = dialog.get_result()
+            for remote, vector in result.items():
+                for album, active in vector:
+                    if active:
+                        self.db.update_album(remote, album)
+                    else:
+                        self.db.remove_album(remote, album)
+
+                    self.db.update_album_active(remote, album, active)
+
+            self.dw.shuffle()
+
+    def add_remotes(self):
+        dialog = SelectRemote(rclone.get_remotes(), self)
+        if dialog.exec_():
+            remote = dialog.get_selected()
+            if remote == "New":
+                remote_name = dialog.get_remote_name().replace(":", "")
+                rclone.create_remote(remote_name, RemoteTypes.google_photos)
+                remote = remote_name + ":"
+            self.pd = Progressing(self, title="Syncing")
+            self.pd.start(lambda : self.db.update_remote(remote, 0))
+
+            #dialog = RemoteDialog(self.db, self)
+            #dialog.exec_()
+
     def toggle_fullscreen(self):
+
         if self.isFullScreen():
             self.showNormal()
         else:
@@ -93,28 +128,27 @@ class ImageWindow(QMainWindow):
         index = self.dw.get(False)
         if index:
 
-            folder, file, hash = self.db.get_name_from_id(index)
-            albums = self.db.get_album_from_hash(hash)
+            info = self.db.get_name_from_id(index)
+            if info is not None:
 
-            if "{" in folder:
-                folder = folder.split("{")[0]
+                remote, folder, file, hash = info
+                albums = self.db.get_album_from_hash(hash)
 
-            if file.lower().endswith(".heic"):
-                file += ".jpg"
-                print("converting heic", file)
+                if "{" in folder:
+                    folder = folder.split("{")[0]
 
-            print("riiririr", "cache/" + folder + "/" + file)
+                if file.lower().endswith(".heic"):
+                    file += ".jpg"
 
-            try:
-                self.set_picture(QPixmap("cache/" + folder + "/" + file))
-                self.title.setText("\n".join(albums))
-                self.db.insert_recent(index)
-            except Exception as e:
-                print("EXCEPTION", e)
-                QTimer.singleShot(1000, self.choose)
+                try:
+                    self.set_picture(QPixmap("cache/" + folder + "/" + file))
+                    self.title.setText("\n".join(albums))
+                    self.db.insert_recent(index)
+                    return
+                except Exception as e:
+                    print("EXCEPTION", e)
 
-        else:
-            QTimer.singleShot(1000, self.choose)
+        QTimer.singleShot(1000, self.choose)
 
     def update_clock(self):
         self.time.setText(QTime.currentTime().toString("hh:mm"))
