@@ -6,6 +6,7 @@ from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QTimer, QRectF, QTime, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsView, QGraphicsScene, QMenu
 from PyQt5.QtGui import QPixmap, QPainter, QFont
+from easyconfig.EasyConfig import EasyConfig
 from rclone_python import rclone
 from rclone_python.remote_types import RemoteTypes
 
@@ -30,6 +31,22 @@ class ImageWindow(QMainWindow):
 
         # Set the window title
         self.setWindowTitle("Image Viewer")
+        self.config = EasyConfig()
+        appearance = self.config.root().addSubSection("Appearance")
+
+        self.cfg_show_title = appearance.addCheckbox("show_title", pretty="Show Title", default=True)
+        self.cfg_title_size = appearance.addSlider("font_size", pretty="Title Font Size", default=40, min=20, max=120, den=1, fmt="{:.0f}")
+
+        self.cfg_show_clock = appearance.addCheckbox("show_clock", pretty="Show Clock", default=True)
+        self.cfg_clock_size = appearance.addSlider("clock_size", pretty="Clock Font Size", default=40, min=20, max=120, den=1, fmt="{:.0f}")
+
+        animation = self.config.root().addSubSection("Animation")
+        self.cfg_zoom_type = animation.addSlider("zoom_type", pretty="Zoom Type", default=2, min=0, max=2, den=1, fmt="{:.0f}")
+        self.cfg_delay = animation.addSlider("delay", pretty="Delay", default=10, min=5, max=60, den=1, fmt="{:.0f}")
+        self.cfg_blur_in = animation.addSlider("blur_in", pretty="Blur in", default=0, min=0, max=10, den=1, fmt="{:.0f}")
+        self.cfg_blur_out = animation.addSlider("blur_out", pretty="Blur out", default=0, min=0, max=10, den=1, fmt="{:.0f}")
+
+        self.config.load("shimo.yaml")
 
         # Create a QGraphicsView widget
         self.view = QGraphicsView(self)
@@ -47,9 +64,6 @@ class ImageWindow(QMainWindow):
         self.setMinimumSize(800, 600)
 
         self.state = ImageWindow.BEGIN
-        self.blur_in = False
-        self.blur_out = False
-        self.zoom_type = 0
         self.index = 0
         self.elapsed = 0
 
@@ -60,7 +74,9 @@ class ImageWindow(QMainWindow):
         self.time = self.scene.addSimpleText("00:00")
         self.info = self.scene.addSimpleText("")
         # Change clock font size and color
-        self.time.setFont(QFont("Arial", 40))
+        print(self.cfg_clock_size.get_value())
+
+        self.time.setFont(QFont("Arial", int(self.cfg_clock_size.get_value())))
         self.time.setBrush(Qt.white)
 
         self.info.setFont(QFont("Arial", 20))
@@ -69,7 +85,7 @@ class ImageWindow(QMainWindow):
         # Change color, size and position of the title
         self.title = self.scene.addSimpleText("Image Viewer")
         self.title.setPos(20, 15)
-        self.title.setFont(QFont("Arial", 40))
+        self.title.setFont(QFont("Arial", int(self.cfg_title_size.get_value())))
         self.title.setBrush(Qt.white)
 
         self.db = Database()
@@ -95,11 +111,16 @@ class ImageWindow(QMainWindow):
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:
         menu = QMenu(self)
         menu.addAction("Fullscreen", self.toggle_fullscreen)
-        # menu.addAction("Settings", self.edit_config)
+        menu.addAction("Settings", self.edit_config)
         menu.addAction("Edit remotes", self.edit_selection)
         menu.addSeparator()
 
         menu.exec_(event.globalPos())
+
+    def edit_config(self):
+        print("edit config")
+        res = self.config.exec()
+        self.config.save("shimo.yaml")
 
     def edit_selection(self):
         dialog = RemoteDialog(self.db, self)
@@ -153,7 +174,6 @@ class ImageWindow(QMainWindow):
         QTimer.singleShot(0, self.choose)
 
     def choose(self):
-        print("choose")
 
         if self.dw.photos.empty():
             self.dw.shuffle(False)
@@ -178,17 +198,30 @@ class ImageWindow(QMainWindow):
         if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
             return self.retry()
 
-        print("set kimage", folder, file, index)
         self.set_picture(pixmap)
-        self.title.setText("\n".join(albums) + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
+        self.title.setText("\n".join(albums))# + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
         self.db.insert_recent(index)
 
 
     def update_clock(self):
+
+        font = self.time.font()
+        font.setPointSize(int(self.cfg_clock_size.get_value()))
+        self.time.setFont(font)
         self.time.setText(QTime.currentTime().toString("hh:mm"))
+        self.time.setVisible(self.cfg_show_clock.get_value())
+
+        font = self.title.font()
+        font.setPointSize(int(self.cfg_title_size.get_value()))
+        self.title.setFont(font)
+        self.title.setVisible(self.cfg_show_title.get_value())
+
+        self.set_time_pos()
+
+
 
     def effect_blur_in(self):
-        self.pixmap.setOpacity(self.pixmap.opacity() + 0.01)
+        self.pixmap.setOpacity(self.pixmap.opacity() + self.cfg_blur_in.get_value()/250)
         return self.pixmap.opacity() >= 1
 
     def effect_zoom_in(self):
@@ -199,7 +232,7 @@ class ImageWindow(QMainWindow):
         return w * zoom > self.width() and h * zoom > self.height()
 
     def effect_blur_out(self):
-        self.pixmap.setOpacity(self.pixmap.opacity() - 0.01)
+        self.pixmap.setOpacity(self.pixmap.opacity() - self.cfg_blur_out.get_value()/250)
         return self.pixmap.opacity() <= 0
 
     def set_picture(self, picture):
@@ -212,12 +245,12 @@ class ImageWindow(QMainWindow):
 
         self.state = ImageWindow.BEGIN
 
-        if self.zoom_type in [0, 2]:
+        if self.cfg_zoom_type.get_value() in [0, 2]:
             self.pixmap.setScale(min(w_ratio, h_ratio))
-        elif self.zoom_type == 1:
+        elif self.cfg_zoom_type.get_value() == 1:
             self.pixmap.setScale(max(w_ratio, h_ratio))
 
-        if self.blur_in:
+        if self.cfg_blur_in.get_value() > 0:
             self.pixmap.setOpacity(0)
         self.elapsed = 0
         self.effects_timer.start(20)
@@ -244,14 +277,14 @@ class ImageWindow(QMainWindow):
             self.state = ImageWindow.BLUR_IN
 
         elif self.state == ImageWindow.BLUR_IN:
-            if self.blur_in:
+            if self.cfg_blur_in.get_value() > 0:
                 if self.effect_blur_in():
                     self.state = ImageWindow.ZOOM_IN
             else:
                 self.state = ImageWindow.ZOOM_IN
 
         elif self.state == ImageWindow.ZOOM_IN:
-            if self.zoom_type == 2:
+            if self.cfg_zoom_type.get_value() == 2:
                 if self.effect_zoom_in():
                     self.state = ImageWindow.WAITING
                     self.elapsed = time.time()
@@ -260,13 +293,11 @@ class ImageWindow(QMainWindow):
                 self.state = ImageWindow.WAITING
 
         elif self.state == ImageWindow.WAITING:
-            print(time.time() - self.elapsed, self.state)
-            if time.time() - self.elapsed > 2 and not self.dw.queue.empty():
-                print("preeeeeeeeee")
+            if time.time() - self.elapsed > self.cfg_delay.get_value() and not self.dw.queue.empty():
                 self.state = ImageWindow.BLUR_OUT
 
         elif self.state == ImageWindow.BLUR_OUT:
-            if self.blur_out:
+            if self.cfg_blur_out.get_value() > 0:
                 if self.effect_blur_out():
                     self.state = ImageWindow.DONE
             else:
