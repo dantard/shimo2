@@ -41,8 +41,9 @@ class ImageWindow(QMainWindow):
         self.cfg_clock_size = appearance.addSlider("clock_size", pretty="Clock Font Size", default=40, min=20, max=120, den=1, fmt="{:.0f}")
 
         animation = self.config.root().addSubSection("Animation")
-        self.cfg_zoom_type = animation.addSlider("zoom_type", pretty="Zoom Type", default=2, min=0, max=2, den=1, fmt="{:.0f}")
         self.cfg_delay = animation.addSlider("delay", pretty="Delay", default=10, min=5, max=60, den=1, fmt="{:.0f}")
+        self.cfg_zoom_type = animation.addSlider("zoom_type", pretty="Zoom Type", default=2, min=0, max=2, den=1, fmt="{:.0f}")
+        self.cfg_zoom_speed = animation.addSlider("zoom_speed", pretty="Zoom Speed", default=0, min=0, max=10, den=1, fmt="{:.0f}")
         self.cfg_blur_in = animation.addSlider("blur_in", pretty="Blur in", default=0, min=0, max=10, den=1, fmt="{:.0f}")
         self.cfg_blur_out = animation.addSlider("blur_out", pretty="Blur out", default=0, min=0, max=10, den=1, fmt="{:.0f}")
 
@@ -228,7 +229,7 @@ class ImageWindow(QMainWindow):
         w, h = self.pixmap.pixmap().width(), self.pixmap.pixmap().height()
         zoom = self.pixmap.scale()
         self.pixmap.setTransformOriginPoint(w / 2, h / 2)
-        self.pixmap.setScale(zoom + 0.001)
+        self.pixmap.setScale(zoom + self.cfg_zoom_speed.get_value()/1000)
         return w * zoom > self.width() and h * zoom > self.height()
 
     def effect_blur_out(self):
