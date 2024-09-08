@@ -115,6 +115,8 @@ class ImageWindow(QMainWindow):
         menu.addAction("Settings", self.edit_config)
         menu.addAction("Edit remotes", self.edit_selection)
         menu.addSeparator()
+        menu.addAction("Shuffle", self.dw.shuffle)
+        menu.addSeparator()
 
         menu.exec_(event.globalPos())
 
@@ -125,8 +127,20 @@ class ImageWindow(QMainWindow):
 
     def edit_selection(self):
         dialog = RemoteDialog(self.db, self)
+        status = dialog.get_result()
         if dialog.exec():
             result = dialog.get_result()
+            results = {}
+            for remote1, vector1 in status.items():
+                updating = []
+                vector2 = result[remote1]
+                for i in range(len(vector1)):
+                    album = vector1[i][0]
+                    active1 = vector1[i][1]
+                    active2 = vector2[i][1]
+                    if active1 != active2:
+                        updating.append((album, active2))
+                results[remote1] = updating
 
             def update_async(result1):
                 i, j = 1, 1
@@ -148,7 +162,7 @@ class ImageWindow(QMainWindow):
                 self.dw.shuffle()
                 self.updating.emit("Done", 0,0,0,0)
 
-            threading.Thread(target=update_async, args=(result,)).start()
+            threading.Thread(target=update_async, args=(results,)).start()
 
     # def add_remotes(self):
     #     dialog = SelectRemote(rclone.get_remotes(), self)

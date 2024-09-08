@@ -80,11 +80,15 @@ class Database:
 
         cursor = Cursor()
         cursor.execute('''UPDATE albums SET touched = ? where remote = ?''', (0, remote))
-
+        folders = []
         for line in result.stdout.splitlines():
             print(line)
             album, hash = line.split(";")
-
+            folders.append((album, hash))
+        print("1",folders)
+        folders.sort(key=lambda x: x[0], reverse=True)
+        print("2", folders)
+        for album, hash in folders:
             cursor.execute('''INSERT INTO albums (remote, title, active, touched)
                      VALUES (?, ?, ?, ?)
                      ON CONFLICT(remote, title) DO UPDATE SET touched = 1''', (remote, album.replace("/", ""), 0, 1))
@@ -102,7 +106,7 @@ class Database:
         cursor.close(commit=True)
 
     def get_albums(self, remote):
-        return Cursor().fetch_all('SELECT remote, title, active FROM albums WHERE remote = ?', (remote,), close=True)
+        return Cursor().fetch_all('SELECT remote, title, active FROM albums WHERE remote = ? order by title desc', (remote,), close=True)
 
     def get_remotes(self):
         remotes = Cursor().fetch_all('SELECT DISTINCT remote FROM albums', close=True)
