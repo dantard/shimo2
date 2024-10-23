@@ -1,3 +1,4 @@
+import os
 import sys
 import threading
 import time
@@ -24,7 +25,7 @@ class ImageWindow(QMainWindow):
     BLUR_OUT = 4
     DONE = 255
 
-    updating = pyqtSignal(str, int,int,int,int)
+    updating = pyqtSignal(str, int, int, int, int)
 
     def __init__(self):
         super().__init__()
@@ -39,6 +40,10 @@ class ImageWindow(QMainWindow):
 
         self.cfg_show_clock = appearance.addCheckbox("show_clock", pretty="Show Clock", default=True)
         self.cfg_clock_size = appearance.addSlider("clock_size", pretty="Clock Font Size", default=40, min=20, max=120, den=1, fmt="{:.0f}")
+
+        self.cfg_show_tr_info = appearance.addCheckbox("show_hr_info", pretty="Show Remaining", default=True)
+        self.cfg_tr_info_size = appearance.addSlider("tr_info_size", pretty="Remaining Font Size", default=40, min=20, max=120, den=1, fmt="{:.0f}")
+
 
         animation = self.config.root().addSubSection("Animation")
         self.cfg_delay = animation.addSlider("delay", pretty="Delay", default=10, min=5, max=60, den=1, fmt="{:.0f}")
@@ -74,6 +79,8 @@ class ImageWindow(QMainWindow):
 
         self.time = self.scene.addSimpleText("00:00")
         self.info = self.scene.addSimpleText("")
+        self.hr_info = self.scene.addSimpleText("")
+
         # Change clock font size and color
         print(self.cfg_clock_size.get_value())
 
@@ -83,6 +90,9 @@ class ImageWindow(QMainWindow):
         self.info.setFont(QFont("Arial", 20))
         self.info.setBrush(Qt.white)
 
+        self.hr_info.setFont(QFont("Arial", 20))
+        self.hr_info.setBrush(Qt.white)
+
         # Change color, size and position of the title
         self.title = self.scene.addSimpleText("Image Viewer")
         self.title.setPos(20, 15)
@@ -90,8 +100,8 @@ class ImageWindow(QMainWindow):
         self.title.setBrush(Qt.white)
 
         self.db = Database()
-        self.dw = Downloader(self.db)
-        self.dw.start()
+        self.downloader = Downloader(self.db)
+        self.downloader.start()
 
         self.effects_timer = QTimer()
         self.effects_timer.timeout.connect(self.process)
@@ -99,9 +109,11 @@ class ImageWindow(QMainWindow):
         self.clock_timer = QTimer()
         self.clock_timer.timeout.connect(self.update_clock)
         self.clock_timer.start(1000)
+
         self.updating.connect(self.update_progress)
 
         self.choose()
+        self.showFullScreen()
 
     def update_progress(self, name, i, n, j, m):
         if i == 0 and n == 0 and j == 0 and m == 0:
@@ -115,7 +127,7 @@ class ImageWindow(QMainWindow):
         menu.addAction("Settings", self.edit_config)
         menu.addAction("Edit remotes", self.edit_selection)
         menu.addSeparator()
-        menu.addAction("Shuffle", self.dw.shuffle)
+        menu.addAction("Shuffle", self.downloader.shuffle)
         menu.addSeparator()
 
         menu.exec_(event.globalPos())
@@ -159,8 +171,8 @@ class ImageWindow(QMainWindow):
 
                     i += 1
 
-                self.dw.shuffle()
-                self.updating.emit("Done", 0,0,0,0)
+                self.downloader.shuffle()
+                self.updating.emit("Done", 0, 0, 0, 0)
 
             threading.Thread(target=update_async, args=(results,)).start()
 
@@ -186,24 +198,27 @@ class ImageWindow(QMainWindow):
             self.showFullScreen()
 
     def retry(self):
-        QTimer.singleShot(0, self.choose)
+        QTimer.singleShot(1000, self.choose)
+        return 1000
 
     def choose(self):
 
-        if self.dw.photos.empty():
-            self.dw.shuffle(False)
+        if self.downloader.photos_queue.empty():
+            self.downloader.shuffle(False)
 
-        index = self.dw.get(False)
+        # get photo index from que downloader queue (non blocking)
+        index = self.downloader.get(False)
+
         if index is None:
             return self.retry()
 
-        info = self.db.get_name_from_id(index)
+        info = self.db.get_info_from_id(index)
 
         if info is None:
             return self.retry()
 
-        remote, folder, file, hash = info
-        albums = self.db.get_album_from_hash(hash)
+        remote, folder, file, hashed = info
+        albums = self.db.get_album_from_hash(hashed)
 
         if file.lower().endswith(".heic"):
             file += ".jpg"
@@ -214,9 +229,13 @@ class ImageWindow(QMainWindow):
             return self.retry()
 
         self.set_picture(pixmap)
-        self.title.setText("\n".join(albums))# + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
-        self.db.insert_recent(index)
+        self.title.setText("\n".join(albums))  # + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
+        self.hr_info.setText(str(self.downloader.photos_queue.qsize()))
 
+        # delete image from disk
+        os.remove("cache/" + folder + "/" + file)
+
+        # self.db.insert_recent(index)
 
     def update_clock(self):
 
@@ -231,23 +250,26 @@ class ImageWindow(QMainWindow):
         self.title.setFont(font)
         self.title.setVisible(self.cfg_show_title.get_value())
 
+        font = self.hr_info.font()
+        font.setPointSize(int(self.cfg_tr_info_size.get_value()))
+        self.hr_info.setFont(font)
+        self.hr_info.setVisible(self.cfg_show_tr_info.get_value())
+
         self.set_time_pos()
 
-
-
     def effect_blur_in(self):
-        self.pixmap.setOpacity(self.pixmap.opacity() + self.cfg_blur_in.get_value()/250)
+        self.pixmap.setOpacity(self.pixmap.opacity() + self.cfg_blur_in.get_value() / 250)
         return self.pixmap.opacity() >= 1
 
     def effect_zoom_in(self):
         w, h = self.pixmap.pixmap().width(), self.pixmap.pixmap().height()
         zoom = self.pixmap.scale()
         self.pixmap.setTransformOriginPoint(w / 2, h / 2)
-        self.pixmap.setScale(zoom + self.cfg_zoom_speed.get_value()/1000)
+        self.pixmap.setScale(zoom + self.cfg_zoom_speed.get_value() / 1000)
         return w * zoom > self.width() and h * zoom > self.height()
 
     def effect_blur_out(self):
-        self.pixmap.setOpacity(self.pixmap.opacity() - self.cfg_blur_out.get_value()/250)
+        self.pixmap.setOpacity(self.pixmap.opacity() - self.cfg_blur_out.get_value() / 250)
         return self.pixmap.opacity() <= 0
 
     def set_picture(self, picture):
@@ -279,7 +301,8 @@ class ImageWindow(QMainWindow):
         self.time.setPos(self.scene.sceneRect().width() - self.time.boundingRect().width() - 20,
                          self.scene.sceneRect().height() - self.time.boundingRect().height() - 15)
         self.info.setPos(20, self.scene.sceneRect().height() - self.info.boundingRect().height() - 30)
-
+        # set hr_info on the top right corner
+        self.hr_info.setPos(self.scene.sceneRect().width() - self.hr_info.boundingRect().width() - 20, 20)
 
     def center_image(self):
         w, h = self.pixmap.pixmap().width(), self.pixmap.pixmap().height()
@@ -308,7 +331,7 @@ class ImageWindow(QMainWindow):
                 self.state = ImageWindow.WAITING
 
         elif self.state == ImageWindow.WAITING:
-            if time.time() - self.elapsed > self.cfg_delay.get_value() and not self.dw.queue.empty():
+            if time.time() - self.elapsed > self.cfg_delay.get_value() and not self.downloader.queue.empty():
                 self.state = ImageWindow.BLUR_OUT
 
         elif self.state == ImageWindow.BLUR_OUT:

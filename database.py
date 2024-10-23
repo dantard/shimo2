@@ -5,6 +5,7 @@ import subprocess
 # Connect to the database (or create it if it doesn't exist)
 import sys
 import time
+from threading import Lock
 
 from downloader import Downloader
 
@@ -40,7 +41,7 @@ class Cursor:
         self.connection.commit()
 
     def close(self, commit=False):
-        self.cursor.close()
+        #self.cursor.close()
         if commit:
             self.connection.commit()
         self.connection.close()
@@ -50,11 +51,12 @@ class Database:
 
     def __init__(self):
         self.connection = sqlite3.connect('my_database.db')
-
         # Create a cursor object to execute SQL commands
         self.cursor = self.connection.cursor()
-
+        self.lock = Lock()
         # Example: Create a table if you want
+        # set wal mode
+        self.cursor.execute("PRAGMA journal_mode=WAL")
         self.cursor.execute('''
         CREATE TABLE IF NOT EXISTS my_table (
             id INTEGER PRIMARY KEY,
@@ -106,10 +108,15 @@ class Database:
         cursor.close(commit=True)
 
     def get_albums(self, remote):
-        return Cursor().fetch_all('SELECT remote, title, active FROM albums WHERE remote = ? order by title desc', (remote,), close=True)
+        self.lock.acquire()
+        albums =  Cursor().fetch_all('SELECT remote, title, active FROM albums WHERE remote = ? order by title desc', (remote,), close=True)
+        self.lock.release()
+        return albums
 
     def get_remotes(self):
+        self.lock.acquire()
         remotes = Cursor().fetch_all('SELECT DISTINCT remote FROM albums', close=True)
+        self.lock.release()
         return [x[0] for x in remotes]
 
     def insert_recent(self, id):
@@ -137,7 +144,7 @@ class Database:
 
     def update_album(self, remote, album):
 
-        print("********** updating", album)
+        self.lock.acquire()
         result = subprocess.run(['rclone', "lsf", remote + "album/" + album,
                                  "--max-depth", "2", "--format", "pi"],
                                 stdout=subprocess.PIPE,
@@ -154,15 +161,22 @@ class Database:
             cursor.execute('DELETE FROM my_table WHERE touched = 0')
 
         cursor.close(True)
+        self.lock.release()
 
     def get_ids(self):
+        self.lock.acquire()
         ids = Cursor().fetch_all('SELECT DISTINCT id FROM my_table', close=True)
+        self.lock.release()
         return [x[0] for x in ids]
 
-    def get_name_from_id(self, index):
+    def get_info_from_id(self, index):
+        self.lock.acquire()
         result = Cursor().fetch_one('SELECT remote, album, file, hash FROM my_table WHERE id = ?', (index,), close=True)
+        self.lock.release()
         return result
 
     def get_album_from_hash(self, hash):
+        self.lock.acquire()
         result = Cursor().fetch_one('SELECT album FROM my_table WHERE hash = ?', (hash,), close=True)
+        self.lock.release()
         return result

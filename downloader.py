@@ -11,7 +11,7 @@ class Downloader:
         self.queue_size = 3
         self.db = database
         self.queue = queue.Queue(self.queue_size)
-        self.photos = queue.Queue()
+        self.photos_queue = queue.Queue()
 
     def shuffle(self, clear=True):
         # empty the queue
@@ -19,53 +19,49 @@ class Downloader:
             while not self.queue.empty():
                 self.queue.get()
 
-            while not self.photos.empty():
-                self.photos.get()
+            while not self.photos_queue.empty():
+                self.photos_queue.get()
 
         ids = self.db.get_ids()
         random.shuffle(ids)
 
         for id in ids:
-            self.photos.put(id)
+            self.photos_queue.put(id)
 
     def start(self):
-        # fill the queue with the recent ids
-        # to have something to show
-        #for idx in self.db.get_recent_ids():
-            #print("Adding", idx, "to queue")
-         #    self.photos.put(idx)
-
         # start the 5 producer tasks
         for i in range(5):
-            threading.Thread(target=self.task, args=(i,)).start()
+            threading.Thread(target=self.download, args=(i,)).start()
 
     def get(self, block=True):
         if not block and self.queue.empty():
             return None
         return self.queue.get()
 
-    def task(self, ids):
+    def download(self, ids):
         while True:
             print("TASK ", ids, "RUNNING")
 
-            index = self.photos.get()
-            remote, folder, file, hash = self.db.get_name_from_id(index)
+            index = self.photos_queue.get()
+            info = self.db.get_info_from_id(index)
 
-            if file == "":
+            if info is None:
                 continue
+
+            remote, folder, file, hashed = info
 
             file_ext = os.path.splitext(file.lower())[-1]
             cache_folder = "cache/" + folder + "/"
 
-            print("Downloading", folder, file)
+            print("TASK", ids, "Downloading", folder, file)
 
             if os.path.exists(cache_folder + file) or os.path.exists(cache_folder + file + ".jpg"):
-                print("Already downloaded", folder, file)
+                print("TASK", ids, "already downloaded", folder, file)
                 self.queue.put(index)
                 continue
 
             if file_ext not in [".jpg", ".jpeg", ".png", ".heic"]:
-                print("Skipping videos", file)
+                print("TASK", ids, "skipping videos", file)
                 continue
 
             # create directory folder
