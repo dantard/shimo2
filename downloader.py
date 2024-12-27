@@ -8,6 +8,7 @@ import time
 
 class Downloader:
     def __init__(self, database):
+        self.directory = "shared-album"
         self.queue_size = 3
         self.db = database
         self.queue = queue.Queue(self.queue_size)
@@ -69,7 +70,7 @@ class Downloader:
             # create directory folder
             os.makedirs(cache_folder, exist_ok=True)
 
-            result = subprocess.run(['rclone', "copy", remote + "album/" + folder + "/" + file, cache_folder],
+            result = subprocess.run(['rclone', "copy", remote + self.directory + "/" + folder + "/" + file, cache_folder],
                                     stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE,
                                     text=True)

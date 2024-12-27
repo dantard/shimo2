@@ -50,6 +50,7 @@ class Cursor:
 class Database:
 
     def __init__(self):
+        self.directory = "shared-album"
         self.connection = sqlite3.connect('my_database.db')
         # Create a cursor object to execute SQL commands
         self.cursor = self.connection.cursor()
@@ -83,7 +84,7 @@ class Database:
 
     def update_remote(self, remote):
 
-        result = subprocess.run(['rclone', "lsf", remote + "album", "--max-depth", "1", "--format", "pi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        result = subprocess.run(['rclone', "lsf", remote + self.directory, "--max-depth", "1", "--format", "pi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True)
 
         cursor = Cursor()
@@ -151,7 +152,7 @@ class Database:
     def update_album(self, remote, album):
 
         self.lock.acquire()
-        result = subprocess.run(['rclone', "lsf", remote + "album/" + album,
+        result = subprocess.run(['rclone', "lsf", remote + self.directory + "/" + album,
                                  "--max-depth", "2", "--format", "pi"],
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
