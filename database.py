@@ -196,3 +196,10 @@ class Database:
         result = Cursor().fetch_all('SELECT album FROM my_table WHERE hash = ?', (hash,), close=True)
         self.lock.release()
         return result
+
+
+    def count(self, remote, album):
+        self.lock.acquire()
+        result = Cursor().fetch_one('SELECT count(*) FROM my_table WHERE remote = ? and album = ?', (remote, album), close=True)
+        self.lock.release()
+        return result[0]

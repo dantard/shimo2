@@ -80,10 +80,13 @@ class RemoteDialog(QDialog):
 
         # Create a QTreeWidget
         self.treeWidget = QTreeWidget()
-        self.treeWidget.setHeaderLabels(["Name", "Enable"])
+        self.treeWidget.setHeaderLabels(["Name", "Enable", "Count"])
+        self.treeWidget.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+
         self.treeWidget.itemSelectionChanged.connect(self.selection_changed)
+
         header = self.treeWidget.header()
-        header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        #header.setSectionResizeMode(QHeaderView.ResizeToContents)
 
         # Add the QTreeWidget to the layout
         layout.addWidget(self.treeWidget)
@@ -168,7 +171,7 @@ class RemoteDialog(QDialog):
     def populate(self):
         self.treeWidget.clear()
         for remote in self.db.get_remotes():
-            item = QTreeWidgetItem([remote, ""])
+            item = QTreeWidgetItem([remote, "",""])
             self.treeWidget.addTopLevelItem(item)
 
             cb = QCheckBox()
@@ -177,12 +180,14 @@ class RemoteDialog(QDialog):
             cb.stateChanged.connect(lambda state, item=item: self.check_all(item))
             all_active = True
             for remote, title, active in self.db.get_albums(remote):
-                album_item = QTreeWidgetItem([title, ""])
+                count = self.db.count(remote, title)
+                album_item = QTreeWidgetItem([title, "", str(count)])
                 item.addChild(album_item)
                 album_item.setCheckState(1, Qt.Checked if active else Qt.Unchecked)
                 all_active = all_active and active
 
             cb.setCheckState(Qt.Checked if all_active else Qt.Unchecked)
+        self.treeWidget.expandAll()
 
     def check_all(self, item):
         for i in range(item.childCount()):

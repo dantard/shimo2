@@ -6,7 +6,7 @@ from datetime import datetime
 
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QTimer, QRectF, QTime, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsView, QGraphicsScene, QMenu, QPushButton
+from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsView, QGraphicsScene, QMenu, QPushButton, QShortcut
 from PyQt5.QtGui import QPixmap, QPainter, QFont
 from easyconfig.EasyConfig import EasyConfig
 from rclone_python import rclone
@@ -132,6 +132,11 @@ class ImageWindow(QMainWindow):
 
         self.updating.connect(self.update_progress)
 
+        # add key shortcuts
+        # Esc to remove fullscreen
+        shortcut = QShortcut(QtGui.QKeySequence("Esc"), self)
+        shortcut.activated.connect(self.toggle_fullscreen)
+
         self.choose()
         self.showFullScreen()
 
@@ -173,6 +178,7 @@ class ImageWindow(QMainWindow):
                     if active:
                         self.db.update_album(remote, album)
                         self.updating.emit(album, i, len(result1), j, len(vector))
+                        QApplication.processEvents()
                         j += 1
                     else:
                         self.db.remove_album(remote, album)
