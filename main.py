@@ -6,7 +6,7 @@ from datetime import datetime
 
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QTimer, QRectF, QTime, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsView, QGraphicsScene, QMenu
+from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsView, QGraphicsScene, QMenu, QPushButton
 from PyQt5.QtGui import QPixmap, QPainter, QFont
 from easyconfig.EasyConfig import EasyConfig
 from rclone_python import rclone
@@ -32,6 +32,7 @@ class ImageWindow(QMainWindow):
         super().__init__()
 
         # Set the window title
+        self.fullscreen_menu = None
         self.counter = 0
         self.screen_on = True
         self.update_running = False
@@ -66,7 +67,10 @@ class ImageWindow(QMainWindow):
 
         # Create a QGraphicsView widget
         self.view = QGraphicsView(self)
+        self.view.setCursor(Qt.BlankCursor)
         self.setCentralWidget(self.view)
+        #self.button = QPushButton("Click me", self)
+        #self.button.clicked.connect(self.auto_update)
 
         # Create a QGraphicsScene
         self.scene = QGraphicsScene(self)
@@ -129,7 +133,7 @@ class ImageWindow(QMainWindow):
         self.updating.connect(self.update_progress)
 
         self.choose()
-        #self.showFullScreen()
+        self.showFullScreen()
 
     def update_progress(self, name, i, n, j, m):
         if i == 0 and n == 0 and j == 0 and m == 0:
@@ -137,46 +141,48 @@ class ImageWindow(QMainWindow):
         else:
             self.info.setText(f"Updating {i}/{n} {j}/{m} ({name})")
 
+
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:
         menu = QMenu(self)
-        menu.addAction("Fullscreen", self.toggle_fullscreen)
+        self.fullscreen_menu = menu.addAction("Fullscreen", self.toggle_fullscreen)
+        self.fullscreen_menu.setCheckable(True)
+        self.fullscreen_menu.setChecked(self.isFullScreen())
+
         menu.addAction("Settings", self.edit_config)
         menu.addAction("Edit remotes", self.edit_selection)
         menu.addSeparator()
+        menu.addAction("Update", self.auto_update)
         menu.addAction("Shuffle", self.downloader.shuffle)
         menu.addSeparator()
+        menu.addAction("Close", QApplication.exit)
 
         menu.exec_(event.globalPos())
 
     def edit_config(self):
-        print("edit config")
-        res = self.config.exec()
+        self.config.set_dialog_minimum_size(400,400)
+        self.config.exec()
         self.config.save("shimo.yaml")
 
-    def update_async(self, result):
-        #self.update_timer.stop()
+    def update_albums_async(self, result):
+
         def do(result1):
             self.update_running = True
             i, j = 1, 1
             for remote, vector in result1.items():
                 for album, active in vector:
-
-                    print("updating album", album, "active", active)
                     if active:
-                        self.updating.emit(album, i, len(result1), j, len(vector))
                         self.db.update_album(remote, album)
+                        self.updating.emit(album, i, len(result1), j, len(vector))
                         j += 1
                     else:
                         self.db.remove_album(remote, album)
 
                     self.db.update_album_active(remote, album, active)
-
                 i += 1
 
             self.downloader.shuffle()
             self.updating.emit("Done", 0, 0, 0, 0)
             self.update_running = False
-            #self.update_timer.start(1000*20)
 
         threading.Thread(target=do, args=(result,)).start()
 
@@ -188,7 +194,7 @@ class ImageWindow(QMainWindow):
             results = {}
             for remote1, vector1 in status.items():
                 updating = []
-                vector2 = result[remote1]
+                vector2 = result.get(remote1,[])
                 for i in range(len(vector1)):
                     album = vector1[i][0]
                     active1 = vector1[i][1]
@@ -197,21 +203,8 @@ class ImageWindow(QMainWindow):
                         updating.append((album, active2))
                 results[remote1] = updating
 
-            self.update_async(results)
+            self.update_albums_async(results)
 
-    # def add_remotes(self):
-    #     dialog = SelectRemote(rclone.get_remotes(), self)
-    #     if dialog.exec_():
-    #         remote = dialog.get_selected()
-    #         if remote == "New":
-    #             remote_name = dialog.get_remote_name().replace(":", "")
-    #             rclone.create_remote(remote_name, RemoteTypes.google_photos)
-    #             remote = remote_name + ":"
-    #         self.pd = Progressing(self, title="Syncing")
-    #         self.pd.start(lambda : self.db.update_remote(remote, 0))
-    #
-    #         #dialog = RemoteDialog(self.db, self)
-    #         #dialog.exec_()
     def set_screen_on(self, value):
         self.screen_on = value
         if value:
@@ -233,35 +226,34 @@ class ImageWindow(QMainWindow):
         return 1000
 
     def choose(self):
-        print("choose1")
+
         if self.downloader.photos_queue.empty():
             self.downloader.shuffle(False)
-        print("choose2")
+
         # get photo index from que downloader queue (non blocking)
         index = self.downloader.get(False)
-        print("choose4")
         if index is None:
             return self.retry()
-        print("choose5")
         info = self.db.get_info_from_id(index)
-        print("choose6")
         if info is None:
             return self.retry()
-        print("choose7")
         remote, folder, file, hashed = info
+
         albums = self.db.get_album_from_hash(hashed)
+        albums = [x[0] for x in albums]
 
         if file.lower().endswith(".heic"):
             file += ".jpg"
 
         pixmap = QPixmap("cache/" + folder + "/" + file)
 
+        print("diocaneallora", folder, file)
+
         if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
             return self.retry()
 
         self.set_picture(pixmap)
-        self.title.setText("\n".join(
-            albums))  # + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
+        self.title.setText("\n".join(albums))  # + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
         self.hr_info.setText(str(self.downloader.photos_queue.qsize()))
 
         # delete image from disk
@@ -302,16 +294,16 @@ class ImageWindow(QMainWindow):
         data = {}
         for remote in remotes:
             print("Update remote", remote, "albums")
-            self.db.update_remote(remote, 0)
+            self.db.update_remote(remote)
 
             data[remote] = []
             albums = self.db.get_albums(remote)
-            for remote, title, active in albums:
+            for _, title, active in albums:
                 if active:
                     print("Adding album", title, "to update list")
                     data[remote].append((title, active))
 
-        self.update_async(data)
+        self.update_albums_async(data)
 
     def effect_blur_in(self):
         self.pixmap.setOpacity(self.pixmap.opacity() + self.cfg_blur_in.get_value() / 250)

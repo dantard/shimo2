@@ -81,6 +81,7 @@ class RemoteDialog(QDialog):
         # Create a QTreeWidget
         self.treeWidget = QTreeWidget()
         self.treeWidget.setHeaderLabels(["Name", "Enable"])
+        self.treeWidget.itemSelectionChanged.connect(self.selection_changed)
         header = self.treeWidget.header()
         header.setSectionResizeMode(QHeaderView.ResizeToContents)
 
@@ -95,11 +96,12 @@ class RemoteDialog(QDialog):
         buttonBox3 = QPushButton("Add Folder")
         buttonBox3.clicked.connect(self.add_folder)
         self.remove_button = QPushButton("Remove")
-        # self.remove_button.clicked.connect(self.remove_remote)
+        self.remove_button.clicked.connect(self.remove_remote)
         self.remove_button.setEnabled(False)
 
         self.update_button = QPushButton("Update")
         self.update_button.clicked.connect(self.update_remote)
+        self.update_button.setEnabled(False)
 
         cancelButton = QPushButton("Cancel")
         cancelButton.clicked.connect(self.reject)
@@ -120,6 +122,19 @@ class RemoteDialog(QDialog):
         self.setLayout(layout)
         self.populate()
 
+    def selection_changed(self):
+        selected = self.treeWidget.selectedItems()
+        self.remove_button.setEnabled(len(selected) == 1 and selected[0].parent() is None)
+        self.update_button.setEnabled(len(selected) == 1 and selected[0].parent() is None)
+
+    def remove_remote(self):
+        selected = self.treeWidget.selectedItems()
+        if len(selected) == 1:
+            if selected[0].parent() is None:
+                remote = selected[0].text(0)
+                self.db.remove_remote(remote)
+                self.populate()
+
     def add_remote(self):
         dialog = SelectRemote(rclone.get_remotes(), self)
         if dialog.exec_():
@@ -128,11 +143,11 @@ class RemoteDialog(QDialog):
                 remote_name = dialog.get_remote_name().replace(":", "")
                 rclone.create_remote(remote_name, RemoteTypes.google_photos)
                 remote = remote_name + ":"
-
+            self.db.add_remote(remote)
             self.pd = Progressing(self, title="Syncing")
 
             def update():
-                self.db.update_remote(remote, 0)
+                self.db.update_remote(remote)
                 self.populate()
 
             self.pd.start(update)
@@ -142,14 +157,13 @@ class RemoteDialog(QDialog):
         if len(selected) == 1:
             if selected[0].parent() is None:
                 remote = selected[0].text(0)
+                self.pd = Progressing(self, title="Syncing")
 
-        self.pd = Progressing(self, title="Syncing")
+                def update():
+                    self.db.update_remote(remote)
+                    self.populate()
 
-        def update():
-            self.db.update_remote(remote, 0)
-            self.populate()
-
-        self.pd.start(update)
+                self.pd.start(update)
 
     def populate(self):
         self.treeWidget.clear()

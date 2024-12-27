@@ -56,7 +56,7 @@ class Database:
         self.lock = Lock()
         # Example: Create a table if you want
         # set wal mode
-        self.cursor.execute("PRAGMA journal_mode=WAL")
+        #self.cursor.execute("PRAGMA journal_mode=WAL")
         self.cursor.execute('''
         CREATE TABLE IF NOT EXISTS my_table (
             id INTEGER PRIMARY KEY,
@@ -67,6 +67,12 @@ class Database:
             touched INTEGER,
             UNIQUE(album,file)
         )''')
+        self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS remotes (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL
+        )''')
+
 
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS sequence (id INTEGER, date float)''')
         self.cursor.execute(
@@ -75,7 +81,7 @@ class Database:
         # Commit the changes
         self.connection.commit()
 
-    def update_remote(self, remote, kind):
+    def update_remote(self, remote):
 
         result = subprocess.run(['rclone', "lsf", remote + "album", "--max-depth", "1", "--format", "pi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True)
@@ -98,7 +104,7 @@ class Database:
         # select all the untouched albums
         albums = cursor.fetch_all('SELECT remote, title FROM albums WHERE touched = 0 and remote = ?', (remote,))
 
-        # delete all the images from my_table of remove album
+        # delete all the images from my_table of removed album
         for remote, title in albums:
             cursor.execute('DELETE FROM my_table WHERE remote = ? and album = ?', (remote, title))
 
@@ -115,7 +121,7 @@ class Database:
 
     def get_remotes(self):
         self.lock.acquire()
-        remotes = Cursor().fetch_all('SELECT DISTINCT remote FROM albums', close=True)
+        remotes = Cursor().fetch_all('SELECT name FROM remotes', close=True)
         self.lock.release()
         return [x[0] for x in remotes]
 
@@ -151,17 +157,26 @@ class Database:
                                 stderr=subprocess.PIPE,
                                 text=True)
         cursor = Cursor()
+        print("album", album, "len", len(result.stdout.splitlines()))
+        cursor.execute('''UPDATE my_table SET touched = 0 WHERE remote = ? and album = ?''', (remote, album))
 
         for line in result.stdout.splitlines():
-
             filename, hash = line.split(";")
-
             cursor.execute('''INSERT INTO my_table (remote, album, file, hash, touched) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(album,file) DO UPDATE SET touched = 1''', (remote, album, filename, hash, 1))
-            cursor.execute('DELETE FROM my_table WHERE touched = 0')
+
+        cursor.execute('DELETE FROM my_table WHERE touched = 0')
 
         cursor.close(True)
         self.lock.release()
+
+    def add_remote(self, remote):
+        Cursor().execute('INSERT INTO remotes (name) VALUES (?)', (remote,), commit=True, close=True)
+
+    def remove_remote(self, remote):
+        Cursor().execute('DELETE FROM remotes WHERE name = ?', (remote,), commit=True, close=True)
+        Cursor().execute('DELETE FROM albums WHERE remote = ?', (remote,), commit=True, close=True)
+        Cursor().execute('DELETE FROM my_table WHERE remote = ?', (remote,), commit=True, close=True)
 
     def get_ids(self):
         self.lock.acquire()
@@ -177,6 +192,6 @@ class Database:
 
     def get_album_from_hash(self, hash):
         self.lock.acquire()
-        result = Cursor().fetch_one('SELECT album FROM my_table WHERE hash = ?', (hash,), close=True)
+        result = Cursor().fetch_all('SELECT album FROM my_table WHERE hash = ?', (hash,), close=True)
         self.lock.release()
         return result

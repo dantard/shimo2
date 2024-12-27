@@ -24,7 +24,7 @@ class Downloader:
 
         ids = self.db.get_ids()
         random.shuffle(ids)
-
+        print("suffles", ids)
         for id in ids:
             self.photos_queue.put(id)
 
@@ -40,10 +40,12 @@ class Downloader:
 
     def download(self, ids):
         while True:
-            print("TASK ", ids, "RUNNING")
+            #print("TASK ", ids, "RUNNING")
 
             index = self.photos_queue.get()
             info = self.db.get_info_from_id(index)
+
+            print("got id", index, info)
 
             if info is None:
                 continue
@@ -53,15 +55,15 @@ class Downloader:
             file_ext = os.path.splitext(file.lower())[-1]
             cache_folder = "cache/" + folder + "/"
 
-            print("TASK", ids, "Downloading", folder, file)
+            #print("TASK", ids, "Downloading", folder, file)
 
             if os.path.exists(cache_folder + file) or os.path.exists(cache_folder + file + ".jpg"):
-                print("TASK", ids, "already downloaded", folder, file)
+                #print("TASK", ids, "already downloaded", folder, file)
                 self.queue.put(index)
                 continue
 
             if file_ext not in [".jpg", ".jpeg", ".png", ".heic"]:
-                print("TASK", ids, "skipping videos", file)
+                #print("TASK", ids, "skipping videos", file)
                 continue
 
             # create directory folder
