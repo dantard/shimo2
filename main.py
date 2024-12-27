@@ -122,7 +122,7 @@ class ImageWindow(QMainWindow):
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.auto_update)
-        self.update_timer.start(1000*30)
+        self.update_timer.start(1000*60*60*1)
 
         self.updating.connect(self.update_progress)
 
