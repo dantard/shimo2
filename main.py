@@ -2,6 +2,7 @@ import os
 import sys
 import threading
 import time
+from datetime import datetime
 
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QTimer, QRectF, QTime, pyqtSignal
@@ -31,26 +32,35 @@ class ImageWindow(QMainWindow):
         super().__init__()
 
         # Set the window title
+        self.counter = 0
+        self.screen_on = True
+        self.update_running = False
         self.setWindowTitle("Image Viewer")
         self.config = EasyConfig()
         appearance = self.config.root().addSubSection("Appearance")
 
         self.cfg_show_title = appearance.addCheckbox("show_title", pretty="Show Title", default=True)
-        self.cfg_title_size = appearance.addSlider("font_size", pretty="Title Font Size", default=40, min=20, max=120, den=1, fmt="{:.0f}")
+        self.cfg_title_size = appearance.addSlider("font_size", pretty="Title Font Size", default=40, min=20, max=120,
+                                                   den=1, fmt="{:.0f}")
 
         self.cfg_show_clock = appearance.addCheckbox("show_clock", pretty="Show Clock", default=True)
-        self.cfg_clock_size = appearance.addSlider("clock_size", pretty="Clock Font Size", default=40, min=20, max=120, den=1, fmt="{:.0f}")
+        self.cfg_clock_size = appearance.addSlider("clock_size", pretty="Clock Font Size", default=40, min=20, max=120,
+                                                   den=1, fmt="{:.0f}")
 
         self.cfg_show_tr_info = appearance.addCheckbox("show_hr_info", pretty="Show Remaining", default=True)
-        self.cfg_tr_info_size = appearance.addSlider("tr_info_size", pretty="Remaining Font Size", default=40, min=20, max=120, den=1, fmt="{:.0f}")
-
+        self.cfg_tr_info_size = appearance.addSlider("tr_info_size", pretty="Remaining Font Size", default=40, min=20,
+                                                     max=120, den=1, fmt="{:.0f}")
 
         animation = self.config.root().addSubSection("Animation")
         self.cfg_delay = animation.addSlider("delay", pretty="Delay", default=10, min=5, max=60, den=1, fmt="{:.0f}")
-        self.cfg_zoom_type = animation.addSlider("zoom_type", pretty="Zoom Type", default=2, min=0, max=2, den=1, fmt="{:.0f}")
-        self.cfg_zoom_speed = animation.addSlider("zoom_speed", pretty="Zoom Speed", default=0, min=0, max=10, den=1, fmt="{:.0f}")
-        self.cfg_blur_in = animation.addSlider("blur_in", pretty="Blur in", default=0, min=0, max=10, den=1, fmt="{:.0f}")
-        self.cfg_blur_out = animation.addSlider("blur_out", pretty="Blur out", default=0, min=0, max=10, den=1, fmt="{:.0f}")
+        self.cfg_zoom_type = animation.addSlider("zoom_type", pretty="Zoom Type", default=2, min=0, max=2, den=1,
+                                                 fmt="{:.0f}")
+        self.cfg_zoom_speed = animation.addSlider("zoom_speed", pretty="Zoom Speed", default=0, min=0, max=10, den=1,
+                                                  fmt="{:.0f}")
+        self.cfg_blur_in = animation.addSlider("blur_in", pretty="Blur in", default=0, min=0, max=10, den=1,
+                                               fmt="{:.0f}")
+        self.cfg_blur_out = animation.addSlider("blur_out", pretty="Blur out", default=0, min=0, max=10, den=1,
+                                                fmt="{:.0f}")
 
         self.config.load("shimo.yaml")
 
@@ -110,6 +120,10 @@ class ImageWindow(QMainWindow):
         self.clock_timer.timeout.connect(self.update_clock)
         self.clock_timer.start(1000)
 
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.auto_update)
+        self.update_timer.start(1000*30)
+
         self.updating.connect(self.update_progress)
 
         self.choose()
@@ -137,6 +151,33 @@ class ImageWindow(QMainWindow):
         res = self.config.exec()
         self.config.save("shimo.yaml")
 
+    def update_async(self, result):
+        #self.update_timer.stop()
+        def do(result1):
+            self.update_running = True
+            i, j = 1, 1
+            for remote, vector in result1.items():
+                for album, active in vector:
+
+                    print("updating album", album, "active", active)
+                    if active:
+                        self.updating.emit(album, i, len(result1), j, len(vector))
+                        self.db.update_album(remote, album)
+                        j += 1
+                    else:
+                        self.db.remove_album(remote, album)
+
+                    self.db.update_album_active(remote, album, active)
+
+                i += 1
+
+            self.downloader.shuffle()
+            self.updating.emit("Done", 0, 0, 0, 0)
+            self.update_running = False
+            #self.update_timer.start(1000*20)
+
+        threading.Thread(target=do, args=(result,)).start()
+
     def edit_selection(self):
         dialog = RemoteDialog(self.db, self)
         status = dialog.get_result()
@@ -154,27 +195,7 @@ class ImageWindow(QMainWindow):
                         updating.append((album, active2))
                 results[remote1] = updating
 
-            def update_async(result1):
-                i, j = 1, 1
-                for remote, vector in result1.items():
-                    for album, active in vector:
-
-                        print("updating album", album, "active", active)
-                        if active:
-                            self.updating.emit(album, i, len(result1), j, len(vector))
-                            self.db.update_album(remote, album)
-                            j += 1
-                        else:
-                            self.db.remove_album(remote, album)
-
-                        self.db.update_album_active(remote, album, active)
-
-                    i += 1
-
-                self.downloader.shuffle()
-                self.updating.emit("Done", 0, 0, 0, 0)
-
-            threading.Thread(target=update_async, args=(results,)).start()
+            self.update_async(results)
 
     # def add_remotes(self):
     #     dialog = SelectRemote(rclone.get_remotes(), self)
@@ -189,6 +210,14 @@ class ImageWindow(QMainWindow):
     #
     #         #dialog = RemoteDialog(self.db, self)
     #         #dialog.exec_()
+    def set_screen_on(self, value):
+        self.screen_on = value
+        if value:
+            os.system("/usr/bin/tvservice -p && sudo chvt 6 && sudo chvt 7")
+        else:
+            os.system("/usr/bin/tvservice -o")
+
+        print("putting screeeeeen OFFF")
 
     def toggle_fullscreen(self):
 
@@ -229,7 +258,8 @@ class ImageWindow(QMainWindow):
             return self.retry()
 
         self.set_picture(pixmap)
-        self.title.setText("\n".join(albums))  # + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
+        self.title.setText("\n".join(
+            albums))  # + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
         self.hr_info.setText(str(self.downloader.photos_queue.qsize()))
 
         # delete image from disk
@@ -256,6 +286,26 @@ class ImageWindow(QMainWindow):
         self.hr_info.setVisible(self.cfg_show_tr_info.get_value())
 
         self.set_time_pos()
+
+        if datetime.now().hour == 23 and datetime.now().minute == 0 and self.screen_on:
+            self.set_screen_on(False)
+
+        if datetime.now().hour == 7 and datetime.now().minute == 0 and not self.screen_on:
+            self.set_screen_on(True)
+
+    def auto_update(self):
+        print("Starting auto update")
+        remotes = self.db.get_remotes()
+        data = {}
+        for remote in remotes:
+            data[remote] = []
+            albums = self.db.get_albums(remote)
+            for remote, title, active in albums:
+                if active:
+                    print("Adding album", title, "to update list")
+                    data[remote].append((title, active))
+
+        self.update_async(data)
 
     def effect_blur_in(self):
         self.pixmap.setOpacity(self.pixmap.opacity() + self.cfg_blur_in.get_value() / 250)
