@@ -124,10 +124,12 @@ class ImageWindow(QMainWindow):
         self.update_timer.timeout.connect(self.auto_update)
         self.update_timer.start(1000*60*60*1)
 
+        QTimer.singleShot(25000, self.auto_update)
+
         self.updating.connect(self.update_progress)
 
         self.choose()
-        self.showFullScreen()
+        #self.showFullScreen()
 
     def update_progress(self, name, i, n, j, m):
         if i == 0 and n == 0 and j == 0 and m == 0:
@@ -231,21 +233,21 @@ class ImageWindow(QMainWindow):
         return 1000
 
     def choose(self):
-
+        print("choose1")
         if self.downloader.photos_queue.empty():
             self.downloader.shuffle(False)
-
+        print("choose2")
         # get photo index from que downloader queue (non blocking)
         index = self.downloader.get(False)
-
+        print("choose4")
         if index is None:
             return self.retry()
-
+        print("choose5")
         info = self.db.get_info_from_id(index)
-
+        print("choose6")
         if info is None:
             return self.retry()
-
+        print("choose7")
         remote, folder, file, hashed = info
         albums = self.db.get_album_from_hash(hashed)
 
@@ -296,8 +298,12 @@ class ImageWindow(QMainWindow):
     def auto_update(self):
         print("Starting auto update")
         remotes = self.db.get_remotes()
+
         data = {}
         for remote in remotes:
+            print("Update remote", remote, "albums")
+            self.db.update_remote(remote, 0)
+
             data[remote] = []
             albums = self.db.get_albums(remote)
             for remote, title, active in albums:

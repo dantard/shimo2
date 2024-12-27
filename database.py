@@ -93,7 +93,7 @@ class Database:
         for album, hash in folders:
             cursor.execute('''INSERT INTO albums (remote, title, active, touched)
                      VALUES (?, ?, ?, ?)
-                     ON CONFLICT(remote, title) DO UPDATE SET touched = 1''', (remote, album.replace("/", ""), 0, 1))
+                     ON CONFLICT(remote, title) DO UPDATE SET touched = 1''', (remote, album.replace("/", ""), 1, 1))
 
         # select all the untouched albums
         albums = cursor.fetch_all('SELECT remote, title FROM albums WHERE touched = 0 and remote = ?', (remote,))
