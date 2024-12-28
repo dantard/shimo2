@@ -62,6 +62,7 @@ class ImageWindow(QMainWindow):
                                                fmt="{:.0f}")
         self.cfg_blur_out = animation.addSlider("blur_out", pretty="Blur out", default=0, min=0, max=10, den=1,
                                                 fmt="{:.0f}")
+        self.loop_mode = animation.addCombobox("loop_mode", pretty="Loop Mode", items=["Random", "One per Album"])
 
         self.config.load("shimo.yaml")
 
@@ -115,6 +116,7 @@ class ImageWindow(QMainWindow):
 
         self.db = Database()
         self.downloader = Downloader(self.db)
+        self.downloader.set_loop_mode(self.loop_mode.get_value())
         self.downloader.start()
 
         self.effects_timer = QTimer()
@@ -128,7 +130,7 @@ class ImageWindow(QMainWindow):
         self.update_timer.timeout.connect(self.auto_update)
         self.update_timer.start(1000*60*60*1)
 
-        QTimer.singleShot(25000, self.auto_update)
+        #QTimer.singleShot(25000, self.auto_update)
 
         self.updating.connect(self.update_progress)
 
@@ -166,6 +168,7 @@ class ImageWindow(QMainWindow):
     def edit_config(self):
         self.config.set_dialog_minimum_size(400,400)
         self.config.exec()
+        self.downloader.set_loop_mode(self.loop_mode.get_value())
         self.config.save("shimo.yaml")
 
     def update_albums_async(self, result):

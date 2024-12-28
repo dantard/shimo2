@@ -179,6 +179,12 @@ class Database:
         Cursor().execute('DELETE FROM albums WHERE remote = ?', (remote,), commit=True, close=True)
         Cursor().execute('DELETE FROM my_table WHERE remote = ?', (remote,), commit=True, close=True)
 
+    def get_ids_by_album(self, remote, album):
+        self.lock.acquire()
+        ids = Cursor().fetch_all('SELECT id FROM my_table WHERE remote = ? and album = ?', (remote, album), close=True)
+        self.lock.release()
+        return [x[0] for x in ids]
+
     def get_ids(self):
         self.lock.acquire()
         ids = Cursor().fetch_all('SELECT DISTINCT id FROM my_table', close=True)
