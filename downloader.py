@@ -11,6 +11,7 @@ class Downloader:
     def __init__(self, database):
         self.loop_mode = 1
         self.directory = "shared-album"
+        self.directory = "album"
         self.queue_size = 3
         self.db = database
         self.queue = queue.Queue(self.queue_size)

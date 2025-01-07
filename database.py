@@ -51,6 +51,7 @@ class Database:
 
     def __init__(self):
         self.directory = "shared-album"
+        self.directory = "album"
         self.connection = sqlite3.connect('my_database.db')
         # Create a cursor object to execute SQL commands
         self.cursor = self.connection.cursor()
