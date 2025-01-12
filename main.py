@@ -4,10 +4,11 @@ import threading
 import time
 from datetime import datetime
 
+import exifread
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QTimer, QRectF, QTime, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsView, QGraphicsScene, QMenu, QPushButton, QShortcut
-from PyQt5.QtGui import QPixmap, QPainter, QFont
+from PyQt5.QtGui import QPixmap, QPainter, QFont, QPen
 from easyconfig.EasyConfig import EasyConfig
 from rclone_python import rclone
 from rclone_python.remote_types import RemoteTypes
@@ -17,45 +18,40 @@ from dialogs import RemoteDialog, SelectRemote
 from downloader import Downloader
 from progressing import Progressing
 
-class MyQGraphicsView(QGraphicsView):
 
+class MyQGraphicsView(QGraphicsView):
     save = pyqtSignal()
     delete = pyqtSignal()
+    moved = pyqtSignal()
 
     def __init__(self, a):
         super().__init__(a)
         self.setMouseTracking(True)
         self.timer = QTimer()
         self.timer.timeout.connect(self.mouse_timer)
-        self.save_button = QPushButton("Save", self)
-        self.save_button.setGeometry(0, 0, 500, 500)
-        self.save_button.hide()
-        self.save_button.clicked.connect(self.save_image)
 
-        self.delete_button = QPushButton("Delete", self)
-        self.delete_button.setGeometry(500, 0, 500, 500)
-        self.delete_button.hide()
-        self.delete_button.clicked.connect(self.delete_image)
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        super().mouseReleaseEvent(event)
+        is_left_side = event.x() < self.width() / 2
+        if is_left_side:
+            self.save.emit()
+        else:
+            self.delete.emit()
 
-    def save_image(self):
-        self.save.emit()
 
-    def delete_image(self):
-        self.delete.emit()
+
 
     def mouseMoveEvent(self, a0: QtGui.QMouseEvent) -> None:
         super().mouseMoveEvent(a0)
         self.timer.stop()
-        self.timer.start(1000)
-        self.save_button.show()
-        self.delete_button.show()
+        self.timer.start(2500)
         self.setCursor(Qt.ArrowCursor)
+        self.moved.emit()
 
     def mouse_timer(self):
-        self.save_button.hide()
-        self.delete_button.hide()
         self.timer.stop()
         self.setCursor(Qt.BlankCursor)
+
 
 class ImageWindow(QMainWindow):
     BEGIN = 0
@@ -85,6 +81,7 @@ class ImageWindow(QMainWindow):
                                                    den=1, fmt="{:.0f}")
 
         self.cfg_show_clock = appearance.addCheckbox("show_clock", pretty="Show Clock", default=True)
+        self.cfg_show_date = appearance.addCheckbox("show_date", pretty="Show Date", default=False)
         self.cfg_clock_size = appearance.addSlider("clock_size", pretty="Clock Font Size", default=40, min=20, max=120,
                                                    den=1, fmt="{:.0f}")
 
@@ -110,11 +107,12 @@ class ImageWindow(QMainWindow):
         self.view = MyQGraphicsView(self)
         self.view.setCursor(Qt.BlankCursor)
         self.setCentralWidget(self.view)
-        self.view.save.connect(lambda : self.saved_clicked(0))
-        self.view.delete.connect(lambda : self.saved_clicked(1))
+        self.view.save.connect(lambda: self.saved_clicked(0))
+        self.view.delete.connect(lambda: self.saved_clicked(1))
+        self.view.moved.connect(self.mouse_moved)
 
-        #self.button = QPushButton("Click me", self)
-        #self.button.clicked.connect(self.auto_update)
+        # self.button = QPushButton("Click me", self)
+        # self.button.clicked.connect(self.auto_update)
 
         # Create a QGraphicsScene
         self.scene = QGraphicsScene(self)
@@ -136,8 +134,11 @@ class ImageWindow(QMainWindow):
         self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self.time = self.scene.addSimpleText("00:00")
+        self.time.setPen(QPen(Qt.black,1))
         self.info = self.scene.addSimpleText("")
+        self.info.setPen(QPen(Qt.black,1))
         self.hr_info = self.scene.addSimpleText("")
+        self.hr_info.setPen(QPen(Qt.black,1))
 
         # Change clock font size and color
         print(self.cfg_clock_size.get_value())
@@ -156,6 +157,7 @@ class ImageWindow(QMainWindow):
         self.title.setPos(20, 15)
         self.title.setFont(QFont("Arial", int(self.cfg_title_size.get_value())))
         self.title.setBrush(Qt.white)
+        self.title.setPen(QPen(Qt.black,1))
 
         self.db = Database()
         self.downloader = Downloader(self.db)
@@ -171,9 +173,9 @@ class ImageWindow(QMainWindow):
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.auto_update)
-        self.update_timer.start(1000*60*60*24)
+        self.update_timer.start(1000 * 60 * 60 * 24)
 
-        #QTimer.singleShot(25000, self.auto_update)
+        # QTimer.singleShot(25000, self.auto_update)
 
         self.updating.connect(self.update_progress)
 
@@ -187,17 +189,24 @@ class ImageWindow(QMainWindow):
 
     def saved_clicked(self, i):
         remote, folder, file, hashed = self.image_info
-        #print("saved clicked", i, remote, folder, file, hashed)
+        # print("saved clicked", i, remote, folder, file, hashed)
         self.db.set_saved(file, folder, i)
+        if i == 1:
+            self.title.setPen(QPen(Qt.red, 2))
+        else:
+            self.title.setPen(QPen(Qt.green, 2))
+        QTimer.singleShot(1000,  lambda: self.title.setPen(QPen(Qt.black,1)))
 
-#        self.db.set_saved()
+    #        self.db.set_saved()
+
+    def mouse_moved(self):
+        self.elapsed = time.time()
 
     def update_progress(self, name, i, n, j, m):
         if i == 0 and n == 0 and j == 0 and m == 0:
             self.info.setText("")
         else:
             self.info.setText(f"Updating {i}/{n} {j}/{m} ({name})")
-
 
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:
         menu = QMenu(self)
@@ -216,10 +225,15 @@ class ImageWindow(QMainWindow):
         menu.exec_(event.globalPos())
 
     def edit_config(self):
-        self.config.set_dialog_minimum_size(400,400)
+        self.config.set_dialog_minimum_size(400, 400)
         self.config.exec()
         self.downloader.set_loop_mode(self.loop_mode.get_value())
         self.config.save("shimo.yaml")
+
+    def extract_date_from_exif(self, image_path):
+        with open(image_path, 'rb') as image_file:
+            tags = exifread.process_file(image_file)
+            return tags.get("EXIF DateTimeOriginal")
 
     def update_albums_async(self, result):
 
@@ -253,7 +267,7 @@ class ImageWindow(QMainWindow):
             results = {}
             for remote1, vector1 in status.items():
                 updating = []
-                vector2 = result.get(remote1,[])
+                vector2 = result.get(remote1, [])
                 for i in range(len(vector1)):
                     album = vector1[i][0]
                     active1 = vector1[i][1]
@@ -312,7 +326,17 @@ class ImageWindow(QMainWindow):
             return self.retry()
 
         self.set_picture(pixmap)
-        self.title.setText("\n".join(albums))  # + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
+
+        image_album = "\n".join(albums)
+
+        if self.cfg_show_date.get_value():
+            exif_data = self.extract_date_from_exif("cache/" + folder + "/" + file)
+            if exif_data is not None:
+                exif_data = str(exif_data).split(" ")[0]
+                exif_data = exif_data.replace(":", "-")
+                image_album += "\n" + str(exif_data)
+
+        self.title.setText(image_album)  # + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
         self.hr_info.setText(str(self.downloader.photos_queue.qsize()))
 
         # delete image from disk
@@ -373,7 +397,7 @@ class ImageWindow(QMainWindow):
         zoom = self.pixmap.scale()
         self.pixmap.setTransformOriginPoint(w / 2, h / 2)
         self.pixmap.setScale(zoom + self.cfg_zoom_speed.get_value() / 1000)
-        return w * zoom > self.width() and h * zoom > self.height()
+        return w * zoom >= self.width() and h * zoom >= self.height()
 
     def effect_blur_out(self):
         self.pixmap.setOpacity(self.pixmap.opacity() - self.cfg_blur_out.get_value() / 250)

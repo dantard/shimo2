@@ -41,7 +41,7 @@ class Cursor:
         self.connection.commit()
 
     def close(self, commit=False):
-        #self.cursor.close()
+        # self.cursor.close()
         if commit:
             self.connection.commit()
         self.connection.close()
@@ -58,7 +58,7 @@ class Database:
         self.lock = Lock()
         # Example: Create a table if you want
         # set wal mode
-        #self.cursor.execute("PRAGMA journal_mode=WAL")
+        # self.cursor.execute("PRAGMA journal_mode=WAL")
         self.cursor.execute('''
         CREATE TABLE IF NOT EXISTS my_table (
             id INTEGER PRIMARY KEY,
@@ -75,8 +75,8 @@ class Database:
                     name TEXT NOT NULL
         )''')
 
-
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS saved (id INTEGER primary key, filename text, album text, type integer)''')
+        self.cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS saved (id INTEGER primary key, filename text, album text, type integer)''')
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS sequence (id INTEGER, date float)''')
         self.cursor.execute(
             '''CREATE TABLE IF NOT EXISTS albums (id INTEGER primary key, remote text, title text, active integer, touched integer, UNIQUE(remote, title))''')
@@ -84,11 +84,10 @@ class Database:
         # Commit the changes
         self.connection.commit()
 
-
-
     def update_remote(self, remote):
 
-        result = subprocess.run(['rclone', "lsf", remote + self.directory, "--max-depth", "1", "--format", "pi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        result = subprocess.run(['rclone', "lsf", remote, "--max-depth", "1", "--format", "pi"], stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
                                 text=True)
 
         cursor = Cursor()
@@ -98,7 +97,7 @@ class Database:
             print(line)
             album, hash = line.split(";")
             folders.append((album, hash))
-        print("1",folders)
+        print("1", folders)
         folders.sort(key=lambda x: x[0], reverse=True)
         print("2", folders)
         for album, hash in folders:
@@ -120,14 +119,16 @@ class Database:
 
     def get_albums(self, remote):
         self.lock.acquire()
-        albums =  Cursor().fetch_all('SELECT remote, title, active FROM albums WHERE remote = ? order by title desc', (remote,), close=True)
+        albums = Cursor().fetch_all('SELECT remote, title, active FROM albums WHERE remote = ? order by title desc',
+                                    (remote,), close=True)
         self.lock.release()
         return albums
 
     def set_saved(self, filename, album, type):
         self.lock.acquire()
         cursor = Cursor()
-        cursor.execute('INSERT INTO saved (filename, album, type) VALUES (?, ?, ?)', (filename, album, type), commit=True, close=True)
+        cursor.execute('INSERT INTO saved (filename, album, type) VALUES (?, ?, ?)', (filename, album, type),
+                       commit=True, close=True)
         self.lock.release()
 
     def get_remotes(self):
@@ -147,26 +148,27 @@ class Database:
         );''')
         cursor.execute('INSERT INTO sequence (id, date) VALUES (?, ?)', (id, time.time()), commit=True, close=True)
 
-
     def get_recent_ids(self):
         ids = Cursor().fetch_all('SELECT id FROM sequence', close=True)
         return [x[0] for x in ids]
 
     def remove_album(self, remote, album):
         # Delete from my_table all the file of the specified album
-        Cursor().execute('DELETE FROM my_table WHERE remote = ? AND album = ?', (remote, album), commit=True, close=True)
+        Cursor().execute('DELETE FROM my_table WHERE remote = ? AND album = ?', (remote, album), commit=True,
+                         close=True)
 
     def update_album_active(self, remote, album, active):
-        Cursor().execute('UPDATE albums SET active = ? where remote = ? and title = ?', (active, remote, album), commit=True, close=True)
+        Cursor().execute('UPDATE albums SET active = ? where remote = ? and title = ?', (active, remote, album),
+                         commit=True, close=True)
 
     def update_album(self, remote, album):
 
-        self.lock.acquire()
-        result = subprocess.run(['rclone', "lsf", remote + self.directory + "/" + album,
+        result = subprocess.run(['rclone', "lsf", remote + "/" + album,
                                  "--max-depth", "2", "--format", "pi"],
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
                                 text=True)
+        self.lock.acquire()
         cursor = Cursor()
         print("album", album, "len", len(result.stdout.splitlines()))
         cursor.execute('''UPDATE my_table SET touched = 0 WHERE remote = ? and album = ?''', (remote, album))
@@ -177,7 +179,6 @@ class Database:
                 ON CONFLICT(album,file) DO UPDATE SET touched = 1''', (remote, album, filename, hash, 1))
 
         cursor.execute('DELETE FROM my_table WHERE touched = 0')
-
         cursor.close(True)
         self.lock.release()
 
@@ -213,9 +214,9 @@ class Database:
         self.lock.release()
         return result
 
-
     def count(self, remote, album):
         self.lock.acquire()
-        result = Cursor().fetch_one('SELECT count(*) FROM my_table WHERE remote = ? and album = ?', (remote, album), close=True)
+        result = Cursor().fetch_one('SELECT count(*) FROM my_table WHERE remote = ? and album = ?', (remote, album),
+                                    close=True)
         self.lock.release()
         return result[0]

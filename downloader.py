@@ -125,7 +125,7 @@ class Downloader:
             os.makedirs(cache_folder, exist_ok=True)
 
             result = subprocess.run(
-                ['rclone', "copy", remote + self.directory + "/" + folder + "/" + file, cache_folder],
+                ['rclone', "copy", remote + "/" + folder + "/" + file, cache_folder],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True)

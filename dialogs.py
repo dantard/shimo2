@@ -29,6 +29,13 @@ class SelectRemote(QDialog):
         layout.addWidget(QLabel("Select Remote"))
         layout.addWidget(self.comboBox)
 
+        self.path_comboBox = QComboBox()
+        self.path_comboBox.addItems(
+            ["album", "shared-album", "media/by-year"])
+
+        layout.addWidget(QLabel("Select Path"))
+        layout.addWidget(self.path_comboBox)
+
         self.line_edit = QLineEdit()
         self.label = QLabel("New remote name")
 
@@ -67,6 +74,8 @@ class SelectRemote(QDialog):
     def get_selected(self):
         return self.comboBox.currentText()
 
+    def get_path(self):
+        return self.path_comboBox.currentText()
 
 class RemoteDialog(QDialog):
     def __init__(self, db, parent=None):
@@ -146,11 +155,13 @@ class RemoteDialog(QDialog):
                 remote_name = dialog.get_remote_name().replace(":", "")
                 rclone.create_remote(remote_name, RemoteTypes.google_photos)
                 remote = remote_name + ":"
-            self.db.add_remote(remote)
+            path = dialog.get_path()
+            print("rerer", remote, path)
+            self.db.add_remote(remote + path)
             self.pd = Progressing(self, title="Syncing")
 
             def update():
-                self.db.update_remote(remote)
+                self.db.update_remote(remote + path)
                 self.populate()
 
             self.pd.start(update)
