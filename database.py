@@ -76,12 +76,15 @@ class Database:
         )''')
 
 
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS saved (id INTEGER primary key, filename text, album text, type integer)''')
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS sequence (id INTEGER, date float)''')
         self.cursor.execute(
             '''CREATE TABLE IF NOT EXISTS albums (id INTEGER primary key, remote text, title text, active integer, touched integer, UNIQUE(remote, title))''')
 
         # Commit the changes
         self.connection.commit()
+
+
 
     def update_remote(self, remote):
 
@@ -120,6 +123,12 @@ class Database:
         albums =  Cursor().fetch_all('SELECT remote, title, active FROM albums WHERE remote = ? order by title desc', (remote,), close=True)
         self.lock.release()
         return albums
+
+    def set_saved(self, filename, album, type):
+        self.lock.acquire()
+        cursor = Cursor()
+        cursor.execute('INSERT INTO saved (filename, album, type) VALUES (?, ?, ?)', (filename, album, type), commit=True, close=True)
+        self.lock.release()
 
     def get_remotes(self):
         self.lock.acquire()

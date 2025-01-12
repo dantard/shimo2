@@ -17,6 +17,45 @@ from dialogs import RemoteDialog, SelectRemote
 from downloader import Downloader
 from progressing import Progressing
 
+class MyQGraphicsView(QGraphicsView):
+
+    save = pyqtSignal()
+    delete = pyqtSignal()
+
+    def __init__(self, a):
+        super().__init__(a)
+        self.setMouseTracking(True)
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.mouse_timer)
+        self.save_button = QPushButton("Save", self)
+        self.save_button.setGeometry(0, 0, 500, 500)
+        self.save_button.hide()
+        self.save_button.clicked.connect(self.save_image)
+
+        self.delete_button = QPushButton("Delete", self)
+        self.delete_button.setGeometry(500, 0, 500, 500)
+        self.delete_button.hide()
+        self.delete_button.clicked.connect(self.delete_image)
+
+    def save_image(self):
+        self.save.emit()
+
+    def delete_image(self):
+        self.delete.emit()
+
+    def mouseMoveEvent(self, a0: QtGui.QMouseEvent) -> None:
+        super().mouseMoveEvent(a0)
+        self.timer.stop()
+        self.timer.start(1000)
+        self.save_button.show()
+        self.delete_button.show()
+        self.setCursor(Qt.ArrowCursor)
+
+    def mouse_timer(self):
+        self.save_button.hide()
+        self.delete_button.hide()
+        self.timer.stop()
+        self.setCursor(Qt.BlankCursor)
 
 class ImageWindow(QMainWindow):
     BEGIN = 0
@@ -32,6 +71,7 @@ class ImageWindow(QMainWindow):
         super().__init__()
 
         # Set the window title
+        self.image_info = (None, None, None, None)
         self.fullscreen_menu = None
         self.counter = 0
         self.screen_on = True
@@ -67,9 +107,12 @@ class ImageWindow(QMainWindow):
         self.config.load("shimo.yaml")
 
         # Create a QGraphicsView widget
-        self.view = QGraphicsView(self)
+        self.view = MyQGraphicsView(self)
         self.view.setCursor(Qt.BlankCursor)
         self.setCentralWidget(self.view)
+        self.view.save.connect(lambda : self.saved_clicked(0))
+        self.view.delete.connect(lambda : self.saved_clicked(1))
+
         #self.button = QPushButton("Click me", self)
         #self.button.clicked.connect(self.auto_update)
 
@@ -141,6 +184,13 @@ class ImageWindow(QMainWindow):
 
         self.choose()
         self.showFullScreen()
+
+    def saved_clicked(self, i):
+        remote, folder, file, hashed = self.image_info
+        #print("saved clicked", i, remote, folder, file, hashed)
+        self.db.set_saved(file, folder, i)
+
+#        self.db.set_saved()
 
     def update_progress(self, name, i, n, j, m):
         if i == 0 and n == 0 and j == 0 and m == 0:
@@ -248,6 +298,8 @@ class ImageWindow(QMainWindow):
             return self.retry()
         remote, folder, file, hashed = info
 
+        self.image_info = info
+
         albums = self.db.get_album_from_hash(hashed)
         albums = [x[0] for x in albums]
 
@@ -255,8 +307,6 @@ class ImageWindow(QMainWindow):
             file += ".jpg"
 
         pixmap = QPixmap("cache/" + folder + "/" + file)
-
-        print("diocaneallora", folder, file)
 
         if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
             return self.retry()
