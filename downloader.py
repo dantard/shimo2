@@ -8,6 +8,8 @@ import time
 
 
 class Downloader:
+
+    MAX_THREADS = 5
     def __init__(self, database):
         self.loop_mode = 1
         self.directory = "shared-album"
@@ -16,12 +18,17 @@ class Downloader:
         self.db = database
         self.queue = queue.Queue(self.queue_size)
         self.photos_queue = queue.Queue()
+        self.drop = [False] * Downloader.MAX_THREADS
 
     def set_loop_mode(self, mode):
         self.loop_mode = mode
         self.shuffle(True)
 
     def clear_queue(self):
+
+        for i in range(Downloader.MAX_THREADS):
+            self.drop[i] = True
+
         while not self.queue.empty():
             self.queue.get()
 
@@ -93,7 +100,7 @@ class Downloader:
 
     def start(self):
         # start the 5 producer tasks
-        for i in range(5):
+        for i in range(Downloader.MAX_THREADS):
             threading.Thread(target=self.download, args=(i,)).start()
 
     def get(self, block=True):
@@ -101,7 +108,7 @@ class Downloader:
             return None
         return self.queue.get()
 
-    def download(self, ids):
+    def download(self, _id):
         while True:
             # print("TASK ", ids, "RUNNING")
 
@@ -157,5 +164,9 @@ class Downloader:
                     continue
 
                 os.remove(cache_folder + file)
-                # Resize
-                self.queue.put(index)
+
+                if self.drop[_id]:
+                    self.drop[_id] = False
+                else:
+                    # Resize
+                    self.queue.put(index)
