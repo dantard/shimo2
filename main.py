@@ -224,9 +224,13 @@ class ImageWindow(QMainWindow):
         for remote in remotes:
             m2 = m1.addMenu(remote)
             albums = self.db.get_albums(remote)
+            count = 0
             for _, title, active in albums:
-                action = m2.addAction(title)
+                if count %20 == 0:
+                    m3 = m2.addMenu(title)
+                action = m3.addAction(title)
                 action.triggered.connect(lambda checked, remote=remote, title=title: self.downloader.play(remote, title))
+                count = count+1
 
         menu.addSeparator()
         menu.addAction("Close", QApplication.exit)
