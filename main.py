@@ -496,7 +496,7 @@ def main():
     # Create the application
     app = QApplication(sys.argv)
     font = QFont()
-    font.setPointSize(30)  # Adjust size
+    font.setPointSize(20)  # Adjust size
     app.setFont(font)
 
 
