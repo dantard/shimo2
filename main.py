@@ -219,11 +219,19 @@ class ImageWindow(QMainWindow):
         menu.addSeparator()
         menu.addAction("Update", self.auto_update)
         menu.addAction("Shuffle", self.downloader.shuffle)
+        m1 = menu.addMenu("Play")
+        remotes = self.db.get_remotes()
+        for remote in remotes:
+            m2 = m1.addMenu(remote)
+            albums = self.db.get_albums(remote)
+            for _, title, active in albums:
+                action = m2.addAction(title)
+                action.triggered.connect(lambda checked, remote=remote, title=title: self.downloader.play(remote, title))
+
         menu.addSeparator()
         menu.addAction("Close", QApplication.exit)
 
         menu.exec_(event.globalPos())
-
     def edit_config(self):
         self.config.set_dialog_minimum_size(400, 400)
         self.config.exec()
