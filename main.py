@@ -100,7 +100,7 @@ class ImageWindow(QMainWindow):
                                                fmt="{:.0f}")
         self.cfg_blur_out = animation.addSlider("blur_out", pretty="Blur out", default=0, min=0, max=10, den=1,
                                                 fmt="{:.0f}")
-        self.loop_mode = animation.addCombobox("loop_mode", pretty="Loop Mode", items=["Random", "One per Album"])
+        self.loop_mode = animation.addCombobox("loop_mode", pretty="Loop Mode", items=["Random", "One per Album", "Complete albums"])
 
         self.config.load("shimo.yaml")
 
@@ -191,10 +191,12 @@ class ImageWindow(QMainWindow):
     def saved_clicked(self, i):
         remote, folder, file, hashed = self.image_info
         # print("saved clicked", i, remote, folder, file, hashed)
-        self.db.set_saved(file, folder, i)
+
         if i == 1:
             self.title.setPen(QPen(Qt.red, 2))
+            self.downloader.play(remote, folder)
         else:
+            self.db.set_saved(file, folder, i)
             self.title.setPen(QPen(Qt.green, 2))
         QTimer.singleShot(1000,  lambda: self.title.setPen(QPen(Qt.black,1)))
 

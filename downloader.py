@@ -43,6 +43,19 @@ class Downloader:
         for id in ids:
             self.photos_queue.put(id)
 
+    def shuffle2(self, clear=True):
+        if clear:
+            self.clear_queue()
+        remotes = self.db.get_remotes()
+        for remote in remotes:
+            albums = self.db.get_albums(remote)
+            random.shuffle(albums)
+            for _, title, active in albums:
+                if active:
+                    photo_ids = self.db.get_ids_by_album(remote, title)
+                    for id in photo_ids:
+                        self.photos_queue.put(id)
+
     def play(self,remote, title):
         ids = self.db.get_ids_by_album(remote, title)
 
@@ -56,6 +69,8 @@ class Downloader:
             self.shuffle0(clear)
         elif self.loop_mode == 1:
             self.shuffle1(clear)
+        elif self.loop_mode == 2:
+            self.shuffle2(clear)
 
     def shuffle1(self, clear=True):
         if clear:
