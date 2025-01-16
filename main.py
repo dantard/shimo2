@@ -32,14 +32,14 @@ class MyQGraphicsView(QGraphicsView):
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
+        super().mouseDoubleClickEvent(event)
         is_left_side = event.x() < self.width() / 2
         if is_left_side:
             self.save.emit()
         else:
             self.delete.emit()
-
-
-
 
     def mouseMoveEvent(self, a0: QtGui.QMouseEvent) -> None:
         super().mouseMoveEvent(a0)
@@ -65,6 +65,7 @@ class ImageWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+
 
         # Set the window title
         self.image_info = (None, None, None, None)
@@ -226,11 +227,13 @@ class ImageWindow(QMainWindow):
             albums = self.db.get_albums(remote)
             count = 0
             for _, title, active in albums:
-                if count %20 == 0:
-                    m3 = m2.addMenu(title)
-                action = m3.addAction(title)
-                action.triggered.connect(lambda checked, remote=remote, title=title: self.downloader.play(remote, title))
-                count = count+1
+                ids = self.db.get_ids_by_album(remote, title)
+                if len(ids) > 0:
+                    if count %20 == 0:
+                        m3 = m2.addMenu(title)
+                    action = m3.addAction(title)
+                    action.triggered.connect(lambda checked, remote=remote, title=title: self.downloader.play(remote, title))
+                    count = count+1
 
         menu.addSeparator()
         menu.addAction("Close", QApplication.exit)
@@ -492,6 +495,10 @@ class ImageWindow(QMainWindow):
 def main():
     # Create the application
     app = QApplication(sys.argv)
+    font = QFont()
+    font.setPointSize(30)  # Adjust size
+    app.setFont(font)
+
 
     # Create an instance of the window
     window = ImageWindow()
