@@ -208,8 +208,9 @@ class Database:
         # first get the minimum number of times an image has been seen
         min_seen = Cursor().fetch_one('SELECT MIN(seen) FROM my_table', close=True)[0]
 
-        # get the ids of the images that have been seen the least
-        ids = Cursor().fetch_all('SELECT id FROM my_table WHERE seen = ?', (min_seen,), close=True)
+        # get the ids of the images that have been seen the least but unique on hash
+        ids = Cursor().fetch_all('SELECT id FROM my_table WHERE seen = ? GROUP BY hash', (min_seen,), close=True)
+        #ids = Cursor().fetch_all('SELECT id FROM my_table WHERE seen = ?', (min_seen,), close=True)
         self.lock.release()
         return [x[0] for x in ids]
 
