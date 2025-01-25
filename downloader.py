@@ -1,10 +1,12 @@
 import os
 import queue
 import random
+import struct
 import subprocess
 import sys
 import threading
 import time
+from PIL import Image as Pilmage
 
 
 class Downloader:
@@ -164,27 +166,42 @@ class Downloader:
                 text=True)
 
             if result.returncode != 0:
-                print(result.stderr)
                 continue
 
             if file_ext in [".jpg", ".jpeg", ".png"]:
-                # Resize
-                self.queue.put(index)
+                filename = cache_folder + file
 
             elif file_ext in [".heic"]:
                 result = subprocess.run(["convert", "cache/" + folder + "/" + file, cache_folder + file + ".jpg"],
                                         stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE,
                                         text=True)
-
+                filename = cache_folder + file + ".jpg"
                 if result.returncode != 0:
                     print(result.stderr)
                     continue
 
                 os.remove(cache_folder + file)
+            else:
+                continue
 
-                if self.drop[_id]:
-                    self.drop[_id] = False
-                else:
-                    # Resize
-                    self.queue.put(index)
+            # resize the image to reduce workload
+            p = Pilmage.open(filename)
+            if p.width > p.height:
+                if p.height > 1080:
+                    # landscape, resize in a way that the height is 1080 respecting the aspect ratio
+                    p = p.resize((int(p.width * 1080 / p.height), 1080))
+            else:
+                if p.width > 1920:
+                    # portrait, resize in a way that the width is 1920 respecting the aspect ratio
+                    p = p.resize((1920, int(p.height * 1920 / p.width)))
+            # save the resized image
+            p.save(filename)
+
+            if self.drop[_id]:
+                self.drop[_id] = False
+            else:
+                self.queue.put(index)
+
+
+
