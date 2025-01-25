@@ -71,6 +71,18 @@ class BlurInEffect(Effect):
             self.done.emit(self)
 
 
+class Choose(Effect):
+    def __init__(self, func):
+        super().__init__(None, func)
+        self.setSingleShot(True)
+
+    def effect(self):
+        if self.value():
+            self.done.emit(self)
+        else:
+            self.start(1000)
+
+
 class ZoomInEffect(Effect):
     def effect(self):
         w, h = self.pixmap.pixmap().width(), self.pixmap.pixmap().height()
@@ -94,6 +106,7 @@ class WaitEffect(Effect):
     def effect(self):
         self.stop()
         self.done.emit(self)
+
 
 class ImageWindow(QMainWindow):
     updating = pyqtSignal(str, int, int, int, int)
@@ -233,8 +246,9 @@ class ImageWindow(QMainWindow):
         self.zoom = ZoomInEffect(self.pixmap, self.cfg_zoom_speed)
         self.wait = WaitEffect(self.pixmap, self.cfg_delay)
         self.blur_out = BlurOutEffect(self.pixmap, self.cfg_blur_out)
+        self.chooser = Choose(self.choose)
 
-        effects = [self.blur_in, self.zoom, self.blur_out, self.wait]
+        effects = [self.blur_in, self.zoom, self.blur_out, self.wait, self.chooser]
         for effect in effects:
             effect.done.connect(self.effect_done)
 
@@ -244,17 +258,18 @@ class ImageWindow(QMainWindow):
         shortcut = QShortcut(QtGui.QKeySequence("Esc"), self)
         shortcut.activated.connect(self.toggle_fullscreen)
 
-        QTimer.singleShot(0, self.choose)
+        #QTimer.singleShot(0, self.choose)
+        self.chooser.start(0)
 
         self.showFullScreen()
 
     def effect_done(self, effect):
-        if effect is None:
+        if effect is self.chooser:
             self.blur_in.start(10)
         elif effect == self.blur_in:
             self.zoom.start(10)
         elif effect == self.zoom:
-            print("Start wait", self.cfg_delay.get_value()*1000)
+            print("Start wait", self.cfg_delay.get_value() * 1000)
             self.wait.start(int(self.cfg_delay.get_value() * 1000))
         elif effect == self.wait:
             if self.downloader.is_empty():
@@ -262,7 +277,7 @@ class ImageWindow(QMainWindow):
             else:
                 self.blur_out.start(10)
         elif effect == self.blur_out:
-            QTimer.singleShot(0, self.choose)
+            self.chooser.start(0)
 
     def saved_clicked(self, i):
         remote, folder, file, hashed = self.image_info
@@ -395,14 +410,12 @@ class ImageWindow(QMainWindow):
         # get photo index from que downloader queue (non blocking)
         index = self.downloader.get(False)
         if index is None:
-            QTimer.singleShot(100, self.choose)
-            return
+            return False
 
         info = self.db.get_info_from_id(index)
 
         if info is None:
-            QTimer.singleShot(100, self.choose)
-            return
+            return False
 
         remote, folder, file, hashed = info
 
@@ -416,8 +429,7 @@ class ImageWindow(QMainWindow):
             file += ".jpg"
 
         if not os.path.exists("cache/" + folder + "/" + file):
-            QTimer.singleShot(100, self.choose)
-            return
+            return False
 
         image_album = "\n".join(albums)
 
@@ -429,7 +441,7 @@ class ImageWindow(QMainWindow):
                 image_album += "\n" + str(exif_data)
 
         self.set_picture("cache/" + folder + "/" + file, image_album)
-        self.effect_done(None)
+        return True
 
     def update_clock(self):
 
