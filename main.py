@@ -80,6 +80,7 @@ class Choose(Effect):
         if self.value():
             self.done.emit(self)
         else:
+            self.setSingleShot(True)
             self.start(1000)
 
 
@@ -406,6 +407,7 @@ class ImageWindow(QMainWindow):
     def choose(self):
         if self.downloader.photos_queue.empty():
             self.downloader.shuffle(False)
+            return False
 
         # get photo index from que downloader queue (non blocking)
         index = self.downloader.get(False)

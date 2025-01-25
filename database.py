@@ -12,7 +12,7 @@ from downloader import Downloader
 
 class Cursor:
     def __init__(self):
-        self.connection = sqlite3.connect('my_database.db')
+        self.connection = sqlite3.connect('my_database2.db')
         self.cursor = self.connection.cursor()
 
     def execute(self, *args, commit=False, close=False):
@@ -52,7 +52,7 @@ class Database:
     def __init__(self):
         self.directory = "shared-album"
         self.directory = "album"
-        self.connection = sqlite3.connect('my_database.db')
+        self.connection = sqlite3.connect('my_database2.db')
         # Create a cursor object to execute SQL commands
         self.cursor = self.connection.cursor()
         self.lock = Lock()
