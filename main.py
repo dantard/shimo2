@@ -240,7 +240,7 @@ class ImageWindow(QMainWindow):
         self.clock_timer.start(1000)
 
         self.update_timer = QTimer()
-        self.update_timer.timeout.connect(self.auto_update)
+        #self.update_timer.timeout.connect(self.auto_update)
         self.update_timer.start(1000 * 60 * 60 * 24)
 
         self.blur_in = BlurInEffect(self.pixmap, self.cfg_blur_in)
@@ -274,9 +274,11 @@ class ImageWindow(QMainWindow):
             self.wait.start(int(self.cfg_delay.get_value() * 1000))
         elif effect == self.wait:
             if self.downloader.is_empty():
+                self.time.setPen(QPen(Qt.red, 2))
                 self.wait.start(1000)
             else:
                 self.blur_out.start(10)
+                self.time.setPen(QPen(Qt.black, 2))
         elif effect == self.blur_out:
             self.chooser.start(0)
 
@@ -412,6 +414,7 @@ class ImageWindow(QMainWindow):
         else:
             if self.screen_on:
                 self.set_screen_power(False)
+                self.auto_update()
             return False
 
         if self.downloader.photos_queue.empty():
@@ -451,7 +454,13 @@ class ImageWindow(QMainWindow):
                 exif_data = exif_data.replace(":", "-")
                 image_album += "\n" + str(exif_data)
 
-        self.set_picture("cache/" + folder + "/" + file, image_album)
+        pixmap = QPixmap("cache/" + folder + "/" + file)
+
+        if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
+            return False
+
+        self.set_picture(pixmap, image_album)
+
         return True
 
     def update_clock(self):
@@ -498,9 +507,8 @@ class ImageWindow(QMainWindow):
 
         self.update_albums_async(data)
 
-    def set_picture(self, picture, image_album):
+    def set_picture(self, pixmap, image_album):
 
-        pixmap = QPixmap(picture)
 
         self.title.setText(image_album)
         self.hr_info.setText(str(self.downloader.photos_queue.qsize()))
