@@ -407,7 +407,7 @@ class ImageWindow(QMainWindow):
 
     def choose(self):
         if self.is_within_time_span(time2(7, 0), time2(0, 3)):
-            if not self.screen_on:x
+            if not self.screen_on:
                 self.set_screen_power(True)
         else:
             if self.screen_on:
