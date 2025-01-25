@@ -104,27 +104,27 @@ class ImageWindow(QMainWindow):
 
         self.cfg_show_title = appearance.addCheckbox("show_title", pretty="Show Title", default=True)
         self.cfg_title_size = appearance.addSlider("font_size", pretty="Title Font Size", default=40, min=20, max=120,
-                                                   den=1, fmt="{:.0f}")
+                                                   den=1, fmt="{:.0f}", label_width=40)
 
         self.cfg_show_clock = appearance.addCheckbox("show_clock", pretty="Show Clock", default=True)
         self.cfg_show_date = appearance.addCheckbox("show_date", pretty="Show Date", default=False)
         self.cfg_clock_size = appearance.addSlider("clock_size", pretty="Clock Font Size", default=40, min=20, max=120,
-                                                   den=1, fmt="{:.0f}")
+                                                   den=1, fmt="{:.0f}", label_width=40)
 
         self.cfg_show_tr_info = appearance.addCheckbox("show_hr_info", pretty="Show Remaining", default=True)
         self.cfg_tr_info_size = appearance.addSlider("tr_info_size", pretty="Remaining Font Size", default=40, min=20,
-                                                     max=120, den=1, fmt="{:.0f}")
+                                                     max=120, den=1, fmt="{:.0f}", label_width=40)
 
         animation = self.config.root().addSubSection("Animation")
-        self.cfg_delay = animation.addSlider("delay", pretty="Delay", default=10, min=5, max=60, den=1, fmt="{:.0f}")
+        self.cfg_delay = animation.addSlider("delay", pretty="Delay", default=10, min=5, max=60, den=1, fmt="{:.0f}", label_width=40)
         self.cfg_zoom_type = animation.addSlider("zoom_type", pretty="Zoom Type", default=2, min=0, max=2, den=1,
                                                  fmt="{:.0f}")
         self.cfg_zoom_speed = animation.addSlider("zoom_speed", pretty="Zoom Speed", default=0, min=0, max=10, den=1,
-                                                  fmt="{:.0f}")
+                                                  fmt="{:.0f}", label_width=40)
         self.cfg_blur_in = animation.addSlider("blur_in", pretty="Blur in", default=0, min=0, max=10, den=1,
-                                               fmt="{:.0f}")
+                                               fmt="{:.0f}", label_width=40)
         self.cfg_blur_out = animation.addSlider("blur_out", pretty="Blur out", default=0, min=0, max=10, den=1,
-                                                fmt="{:.0f}")
+                                                fmt="{:.0f}", label_width=40)
         self.loop_mode = animation.addCombobox("loop_mode", pretty="Loop Mode",
                                                items=["Random", "One per Album", "Complete albums"])
 
@@ -286,7 +286,7 @@ class ImageWindow(QMainWindow):
         menu.exec_(event.globalPos())
 
     def edit_config(self):
-        self.config.set_dialog_minimum_size(400, 400)
+        self.config.set_dialog_minimum_size(600, 400)
         self.config.exec()
         self.downloader.set_loop_mode(self.loop_mode.get_value())
         self.config.save("shimo.yaml")
@@ -406,7 +406,7 @@ class ImageWindow(QMainWindow):
             self.zoom_in_signal.emit()
             w, h = self.pixmap.pixmap().width(), self.pixmap.pixmap().height()
             zoom = self.pixmap.scale()
-            time.sleep(0.1 / self.cfg_zoom_speed.get_value())
+            time.sleep(0.01)
 
         while (self.elapsed + self.cfg_delay.get_value()) > time.time():
             time.sleep(0.25)
