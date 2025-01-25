@@ -3,7 +3,7 @@ import sys
 import threading
 import time
 from datetime import datetime
-
+from datetime import time as time2
 import exifread
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QTimer, QRectF, QTime, pyqtSignal
@@ -62,10 +62,35 @@ class ImageWindow(QMainWindow):
     DONE = 255
 
     updating = pyqtSignal(str, int, int, int, int)
+    set_picture_signal = pyqtSignal(str, str)
+    blur_in_signal = pyqtSignal()
+    zoom_in_signal = pyqtSignal()
+    blur_out_signal = pyqtSignal()
+
+    def is_within_time_span(self, start_time, end_time, check_time=None):
+        """
+        Determines if a given time is within a time span.
+
+        Args:
+            start_time (time): The start of the time span.
+            end_time (time): The end of the time span.
+            check_time (time, optional): The time to check. Defaults to the current time.
+
+        Returns:
+            bool: True if the check_time is within the time span, False otherwise.
+        """
+        if check_time is None:
+            check_time = datetime.now().time()
+
+        # If the time span does not cross midnight
+        if start_time <= end_time:
+            return start_time <= check_time < end_time
+        # If the time span crosses midnight
+        else:
+            return check_time >= start_time or check_time < end_time
 
     def __init__(self):
         super().__init__()
-
 
         # Set the window title
         self.image_info = (None, None, None, None)
@@ -100,7 +125,8 @@ class ImageWindow(QMainWindow):
                                                fmt="{:.0f}")
         self.cfg_blur_out = animation.addSlider("blur_out", pretty="Blur out", default=0, min=0, max=10, den=1,
                                                 fmt="{:.0f}")
-        self.loop_mode = animation.addCombobox("loop_mode", pretty="Loop Mode", items=["Random", "One per Album", "Complete albums"])
+        self.loop_mode = animation.addCombobox("loop_mode", pretty="Loop Mode",
+                                               items=["Random", "One per Album", "Complete albums"])
 
         self.config.load("shimo.yaml")
 
@@ -135,11 +161,11 @@ class ImageWindow(QMainWindow):
         self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self.time = self.scene.addSimpleText("00:00")
-        self.time.setPen(QPen(Qt.black,1))
+        self.time.setPen(QPen(Qt.black, 1))
         self.info = self.scene.addSimpleText("")
-        self.info.setPen(QPen(Qt.black,1))
+        self.info.setPen(QPen(Qt.black, 1))
         self.hr_info = self.scene.addSimpleText("")
-        self.hr_info.setPen(QPen(Qt.black,1))
+        self.hr_info.setPen(QPen(Qt.black, 1))
 
         # Change clock font size and color
         print(self.cfg_clock_size.get_value())
@@ -158,15 +184,12 @@ class ImageWindow(QMainWindow):
         self.title.setPos(20, 15)
         self.title.setFont(QFont("Arial", int(self.cfg_title_size.get_value())))
         self.title.setBrush(Qt.white)
-        self.title.setPen(QPen(Qt.black,1))
+        self.title.setPen(QPen(Qt.black, 1))
 
         self.db = Database()
         self.downloader = Downloader(self.db)
         self.downloader.set_loop_mode(self.loop_mode.get_value())
         self.downloader.start()
-
-        self.effects_timer = QTimer()
-        self.effects_timer.timeout.connect(self.process)
 
         self.clock_timer = QTimer()
         self.clock_timer.timeout.connect(self.update_clock)
@@ -185,12 +208,30 @@ class ImageWindow(QMainWindow):
         shortcut = QShortcut(QtGui.QKeySequence("Esc"), self)
         shortcut.activated.connect(self.toggle_fullscreen)
 
-        self.choose()
+        self.set_picture_signal.connect(self.set_picture)
+        self.blur_in_signal.connect(self.effect_blur_in)
+        self.zoom_in_signal.connect(self.effect_zoom_in)
+        self.blur_out_signal.connect(self.effect_blur_out)
+
+        threading.Thread(target=self.producer).start()
+
         self.showFullScreen()
+
+    def producer(self):
+        while True:
+            time.sleep(1)
+            if self.is_within_time_span(time2(23, 45), time2(7, 45)):
+                if self.screen_on:
+                    self.set_screen_on(False)
+                continue
+            else:
+                if not self.screen_on:
+                    self.set_screen_on(True)
+
+            self.choose()
 
     def saved_clicked(self, i):
         remote, folder, file, hashed = self.image_info
-        # print("saved clicked", i, remote, folder, file, hashed)
 
         if i == 1:
             self.title.setPen(QPen(Qt.red, 2))
@@ -198,7 +239,7 @@ class ImageWindow(QMainWindow):
         else:
             self.db.set_saved(file, folder, i)
             self.title.setPen(QPen(Qt.green, 2))
-        QTimer.singleShot(1000,  lambda: self.title.setPen(QPen(Qt.black,1)))
+        QTimer.singleShot(1000, lambda: self.title.setPen(QPen(Qt.black, 1)))
 
     #        self.db.set_saved()
 
@@ -231,16 +272,18 @@ class ImageWindow(QMainWindow):
             for _, title, active in albums:
                 ids = self.db.get_ids_by_album(remote, title)
                 if len(ids) > 0:
-                    if count %20 == 0:
+                    if count % 20 == 0:
                         m3 = m2.addMenu(title)
                     action = m3.addAction(title)
-                    action.triggered.connect(lambda checked, remote=remote, title=title: self.downloader.play(remote, title))
-                    count = count+1
+                    action.triggered.connect(
+                        lambda checked, remote=remote, title=title: self.downloader.play(remote, title))
+                    count = count + 1
 
         menu.addSeparator()
         menu.addAction("Close", QApplication.exit)
 
         menu.exec_(event.globalPos())
+
     def edit_config(self):
         self.config.set_dialog_minimum_size(400, 400)
         self.config.exec()
@@ -298,11 +341,12 @@ class ImageWindow(QMainWindow):
     def set_screen_on(self, value):
         self.screen_on = value
         if value:
+            os.system("xset dpms force on")  # For Linux
             os.system("/usr/bin/tvservice -p && sudo chvt 6 && sudo chvt 7")
         else:
+            os.system("xset dpms force off")  # For Linux
             os.system("/usr/bin/tvservice -o")
 
-        print("putting screeeeeen OFFF")
 
     def toggle_fullscreen(self):
 
@@ -311,24 +355,23 @@ class ImageWindow(QMainWindow):
         else:
             self.showFullScreen()
 
-    def retry(self):
-        QTimer.singleShot(1000, self.choose)
-        return 1000
-
     def choose(self):
-
         if self.downloader.photos_queue.empty():
             self.downloader.shuffle(False)
 
         # get photo index from que downloader queue (non blocking)
         index = self.downloader.get(False)
         if index is None:
-            return self.retry()
+            return
+
         info = self.db.get_info_from_id(index)
+
         if info is None:
-            return self.retry()
+            return
+
         remote, folder, file, hashed = info
 
+        self.db.increment_seen(index)
         self.image_info = info
 
         albums = self.db.get_album_from_hash(hashed)
@@ -337,12 +380,8 @@ class ImageWindow(QMainWindow):
         if file.lower().endswith(".heic"):
             file += ".jpg"
 
-        pixmap = QPixmap("cache/" + folder + "/" + file)
-
-        if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
-            return self.retry()
-
-        self.set_picture(pixmap)
+        if not os.path.exists("cache/" + folder + "/" + file):
+            return
 
         image_album = "\n".join(albums)
 
@@ -353,13 +392,30 @@ class ImageWindow(QMainWindow):
                 exif_data = exif_data.replace(":", "-")
                 image_album += "\n" + str(exif_data)
 
-        self.title.setText(image_album)  # + " - " + str(self.dw.photos.qsize()) + "_" + str(index) + " - " + str(self.dw.queue.qsize()))
-        self.hr_info.setText(str(self.downloader.photos_queue.qsize()))
+        self.set_picture_signal.emit("cache/" + folder + "/" + file, image_album)
+        while self.pixmap.opacity() < 1:
+            self.blur_in_signal.emit()
+            time.sleep(0.1 / self.cfg_blur_in.get_value())
+
+        self.elapsed = time.time()
+
+        w, h = self.pixmap.pixmap().width(), self.pixmap.pixmap().height()
+        zoom = self.pixmap.scale()
+        while not (w * zoom >= self.width() and h * zoom >= self.height()):
+            self.zoom_in_signal.emit()
+            w, h = self.pixmap.pixmap().width(), self.pixmap.pixmap().height()
+            zoom = self.pixmap.scale()
+            time.sleep(0.1 / self.cfg_zoom_speed.get_value())
+
+        while (self.elapsed + self.cfg_delay.get_value()) > time.time():
+            time.sleep(0.25)
+
+        while self.pixmap.opacity() > 0:
+            self.blur_out_signal.emit()
+            time.sleep(0.1 / self.cfg_blur_out.get_value())
 
         # delete image from disk
         os.remove("cache/" + folder + "/" + file)
-
-        # self.db.insert_recent(index)
 
     def update_clock(self):
 
@@ -407,28 +463,32 @@ class ImageWindow(QMainWindow):
 
     def effect_blur_in(self):
         self.pixmap.setOpacity(self.pixmap.opacity() + self.cfg_blur_in.get_value() / 250)
-        return self.pixmap.opacity() >= 1
+        # return self.pixmap.opacity() >= 1
 
     def effect_zoom_in(self):
         w, h = self.pixmap.pixmap().width(), self.pixmap.pixmap().height()
         zoom = self.pixmap.scale()
         self.pixmap.setTransformOriginPoint(w / 2, h / 2)
         self.pixmap.setScale(zoom + self.cfg_zoom_speed.get_value() / 1000)
-        return w * zoom >= self.width() and h * zoom >= self.height()
 
     def effect_blur_out(self):
         self.pixmap.setOpacity(self.pixmap.opacity() - self.cfg_blur_out.get_value() / 250)
         return self.pixmap.opacity() <= 0
 
-    def set_picture(self, picture):
+    def set_picture(self, picture, image_album):
 
-        self.pixmap.setPixmap(picture)
+        pixmap = QPixmap(picture)
+
+        self.title.setText(image_album)
+        self.hr_info.setText(str(self.downloader.photos_queue.qsize()))
+
+        self.pixmap.setPixmap(pixmap)
         self.center_image()
 
         w_ratio = self.scene.sceneRect().width() / self.pixmap.pixmap().width()
         h_ratio = self.scene.sceneRect().height() / self.pixmap.pixmap().height()
 
-        self.state = ImageWindow.BEGIN
+        # self.state = ImageWindow.BEGIN
 
         if self.cfg_zoom_type.get_value() in [0, 2]:
             self.pixmap.setScale(min(w_ratio, h_ratio))
@@ -437,8 +497,8 @@ class ImageWindow(QMainWindow):
 
         if self.cfg_blur_in.get_value() > 0:
             self.pixmap.setOpacity(0)
-        self.elapsed = 0
-        self.effects_timer.start(20)
+        self.elapsed = time.time()
+        # self.effects_timer.start(20)
 
     def resizeEvent(self, a0) -> None:
         self.scene.setSceneRect(0, 0, self.width(), self.height())
@@ -458,41 +518,6 @@ class ImageWindow(QMainWindow):
         self.pixmap.setPos(self.scene.sceneRect().width() / 2 - self.pixmap.pixmap().width() / 2,
                            self.scene.sceneRect().height() / 2 - self.pixmap.pixmap().height() / 2)
 
-    def process(self):
-        if self.state == ImageWindow.BEGIN:
-            self.state = ImageWindow.BLUR_IN
-
-        elif self.state == ImageWindow.BLUR_IN:
-            if self.cfg_blur_in.get_value() > 0:
-                if self.effect_blur_in():
-                    self.state = ImageWindow.ZOOM_IN
-            else:
-                self.state = ImageWindow.ZOOM_IN
-
-        elif self.state == ImageWindow.ZOOM_IN:
-            if self.cfg_zoom_type.get_value() == 2:
-                if self.effect_zoom_in():
-                    self.state = ImageWindow.WAITING
-                    self.elapsed = time.time()
-            else:
-                self.elapsed = time.time()
-                self.state = ImageWindow.WAITING
-
-        elif self.state == ImageWindow.WAITING:
-            if time.time() - self.elapsed > self.cfg_delay.get_value() and not self.downloader.queue.empty():
-                self.state = ImageWindow.BLUR_OUT
-
-        elif self.state == ImageWindow.BLUR_OUT:
-            if self.cfg_blur_out.get_value() > 0:
-                if self.effect_blur_out():
-                    self.state = ImageWindow.DONE
-            else:
-                self.state = ImageWindow.DONE
-
-        elif self.state == ImageWindow.DONE:
-            self.effects_timer.stop()
-            self.choose()
-
 
 def main():
     # Create the application
@@ -500,7 +525,6 @@ def main():
     font = QFont()
     font.setPointSize(20)  # Adjust size
     app.setFont(font)
-
 
     # Create an instance of the window
     window = ImageWindow()

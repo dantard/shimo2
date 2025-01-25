@@ -67,6 +67,7 @@ class Database:
             file TEXT NOT NULL,
             hash TEXT NOT NULL,
             touched INTEGER,
+            seen INTEGER DEFAULT 0,
             UNIQUE(album,file)
         )''')
         self.cursor.execute('''
@@ -94,12 +95,10 @@ class Database:
         cursor.execute('''UPDATE albums SET touched = ? where remote = ?''', (0, remote))
         folders = []
         for line in result.stdout.splitlines():
-            print(line)
             album, hash = line.split(";")
             folders.append((album, hash))
-        print("1", folders)
         folders.sort(key=lambda x: x[0], reverse=True)
-        print("2", folders)
+
         for album, hash in folders:
             cursor.execute('''INSERT INTO albums (remote, title, active, touched)
                      VALUES (?, ?, ?, ?)
@@ -202,6 +201,18 @@ class Database:
         self.lock.release()
         return [x[0] for x in ids]
 
+    def get_ids_by_seen(self):
+        self.lock.acquire()
+
+        # get the ids of the images that have been seen the least
+        # first get the minimum number of times an image has been seen
+        min_seen = Cursor().fetch_one('SELECT MIN(seen) FROM my_table', close=True)[0]
+
+        # get the ids of the images that have been seen the least
+        ids = Cursor().fetch_all('SELECT id FROM my_table WHERE seen = ?', (min_seen,), close=True)
+        self.lock.release()
+        return [x[0] for x in ids]
+
     def get_info_from_id(self, index):
         self.lock.acquire()
         result = Cursor().fetch_one('SELECT remote, album, file, hash FROM my_table WHERE id = ?', (index,), close=True)
@@ -220,3 +231,8 @@ class Database:
                                     close=True)
         self.lock.release()
         return result[0]
+
+    def increment_seen(self, index):
+        self.lock.acquire()
+        Cursor().execute('UPDATE my_table SET seen = seen + 1 WHERE id = ?', (index,), commit=True, close=True)
+        self.lock.release()

@@ -38,7 +38,7 @@ class Downloader:
     def shuffle0(self, clear=True):
         if clear:
             self.clear_queue()
-        ids = self.db.get_ids()
+        ids = self.db.get_ids_by_seen()
         random.shuffle(ids)
         for id in ids:
             self.photos_queue.put(id)
