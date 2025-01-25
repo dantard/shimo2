@@ -394,11 +394,11 @@ class ImageWindow(QMainWindow):
         self.screen_on = value
         if value:
             #os.system("xset dpms force on")  # For Linux
-            os.system("/usr/bin/txrandr --output HDMI-1 --auto")#vservice -p && sudo chvt 6 && sudo chvt 7")
+            os.system("/usr/bin/xrandr --output HDMI-1 --auto")#vservice -p && sudo chvt 6 && sudo chvt 7")
         else:
             #os.system("xset dpms force off")  # For Linux
             #os.system("/usr/bin/tvservice -o")
-            os.system("/usr/bin/txrandr --output HDMI-1 --off")
+            os.system("/usr/bin/xrandr --output HDMI-1 --off")
 
     def toggle_fullscreen(self):
 
@@ -408,7 +408,7 @@ class ImageWindow(QMainWindow):
             self.showFullScreen()
 
     def choose(self):
-        if self.is_within_time_span(time2(7, 0), time2(0, 3)):
+        if self.is_within_time_span(time2(7, 0), time2(0, 6)):
             if not self.screen_on:
                 self.set_screen_power(True)
         else:
