@@ -123,6 +123,9 @@ class Downloader:
             return None
         return self.queue.get()
 
+    def is_empty(self):
+        return self.queue.empty()
+
     def download(self, _id):
         while True:
             # print("TASK ", ids, "RUNNING")

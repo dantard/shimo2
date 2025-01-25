@@ -219,16 +219,17 @@ class ImageWindow(QMainWindow):
 
     def producer(self):
         while True:
-            time.sleep(1)
             if self.is_within_time_span(time2(23, 45), time2(7, 45)):
                 if self.screen_on:
                     self.set_screen_on(False)
+                time.sleep(1)
                 continue
             else:
                 if not self.screen_on:
                     self.set_screen_on(True)
 
-            self.choose()
+            if not self.choose():
+                time.sleep(0.25)
 
     def saved_clicked(self, i):
         remote, folder, file, hashed = self.image_info
@@ -362,12 +363,12 @@ class ImageWindow(QMainWindow):
         # get photo index from que downloader queue (non blocking)
         index = self.downloader.get(False)
         if index is None:
-            return
+            return False
 
         info = self.db.get_info_from_id(index)
 
         if info is None:
-            return
+            return False
 
         remote, folder, file, hashed = info
 
@@ -381,7 +382,7 @@ class ImageWindow(QMainWindow):
             file += ".jpg"
 
         if not os.path.exists("cache/" + folder + "/" + file):
-            return
+            return False
 
         image_album = "\n".join(albums)
 
@@ -410,12 +411,16 @@ class ImageWindow(QMainWindow):
         while (self.elapsed + self.cfg_delay.get_value()) > time.time():
             time.sleep(0.25)
 
+        while self.downloader.is_empty():
+            time.sleep(0.25)
+
         while self.pixmap.opacity() > 0:
             self.blur_out_signal.emit()
             time.sleep(0.1 / self.cfg_blur_out.get_value())
 
         # delete image from disk
         os.remove("cache/" + folder + "/" + file)
+        return True
 
     def update_clock(self):
 
