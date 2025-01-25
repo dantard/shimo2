@@ -205,11 +205,11 @@ class ImageWindow(QMainWindow):
         self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self.time = self.scene.addSimpleText("00:00")
-        self.time.setPen(QPen(Qt.black, 1))
+        self.time.setPen(QPen(Qt.black, 2))
         self.info = self.scene.addSimpleText("")
-        self.info.setPen(QPen(Qt.black, 1))
+        self.info.setPen(QPen(Qt.black, 2))
         self.hr_info = self.scene.addSimpleText("")
-        self.hr_info.setPen(QPen(Qt.black, 1))
+        self.hr_info.setPen(QPen(Qt.black, 2))
 
         # Change clock font size and color
         print(self.cfg_clock_size.get_value())
@@ -388,7 +388,7 @@ class ImageWindow(QMainWindow):
 
             self.update_albums_async(results)
 
-    def set_screen_on(self, value):
+    def set_screen_power(self, value):
         self.screen_on = value
         if value:
             os.system("xset dpms force on")  # For Linux
@@ -405,6 +405,14 @@ class ImageWindow(QMainWindow):
             self.showFullScreen()
 
     def choose(self):
+        if self.is_within_time_span(time2(7, 0), time2(23, 0)):
+            if not self.screen_on:
+                self.set_screen_power(True)
+        else:
+            if self.screen_on:
+                self.set_screen_power(False)
+            return False
+
         if self.downloader.photos_queue.empty():
             self.downloader.shuffle(False)
             return False
@@ -466,10 +474,10 @@ class ImageWindow(QMainWindow):
         self.set_time_pos()
 
         if datetime.now().hour == 23 and datetime.now().minute == 0 and self.screen_on:
-            self.set_screen_on(False)
+            self.set_screen_power(False)
 
         if datetime.now().hour == 7 and datetime.now().minute == 0 and not self.screen_on:
-            self.set_screen_on(True)
+            self.set_screen_power(True)
 
     def auto_update(self):
         print("Starting auto update")
