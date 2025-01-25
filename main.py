@@ -396,6 +396,7 @@ class ImageWindow(QMainWindow):
         self.set_picture_signal.emit("cache/" + folder + "/" + file, image_album)
         while self.pixmap.opacity() < 1:
             self.blur_in_signal.emit()
+            QApplication.processEvents()
             time.sleep(0.1 / self.cfg_blur_in.get_value())
 
         self.elapsed = time.time()
@@ -404,6 +405,7 @@ class ImageWindow(QMainWindow):
         zoom = self.pixmap.scale()
         while not (w * zoom >= self.width() and h * zoom >= self.height()):
             self.zoom_in_signal.emit()
+            QApplication.processEvents()
             w, h = self.pixmap.pixmap().width(), self.pixmap.pixmap().height()
             zoom = self.pixmap.scale()
             time.sleep(0.01)
@@ -416,6 +418,7 @@ class ImageWindow(QMainWindow):
 
         while self.pixmap.opacity() > 0:
             self.blur_out_signal.emit()
+            QApplication.processEvents()
             time.sleep(0.1 / self.cfg_blur_out.get_value())
 
         # delete image from disk
