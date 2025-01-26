@@ -146,8 +146,6 @@ class ImageWindow(QMainWindow):
         self.setWindowTitle("Image Viewer")
         self.config = EasyConfig()
 
-        self.process_lock = threading.Lock()
-
         appearance = self.config.root().addSubSection("Appearance")
 
         self.cfg_show_title = appearance.addCheckbox("show_title", pretty="Show Title", default=True)
@@ -535,7 +533,7 @@ class ImageWindow(QMainWindow):
         self.time.setPos(self.scene.sceneRect().width() - self.time.boundingRect().width() - 20,
                          self.scene.sceneRect().height() - self.time.boundingRect().height() - 15)
         self.info.setPos(20, self.scene.sceneRect().height() - self.info.boundingRect().height() - 30)
-        # set hr_info on the top right corner
+        # set hr_info in the top right corner
         self.hr_info.setPos(self.scene.sceneRect().width() - self.hr_info.boundingRect().width() - 20, 20)
 
     def center_image(self):

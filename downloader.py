@@ -185,18 +185,19 @@ class Downloader:
             else:
                 continue
 
-            # resize the image to reduce workload
-            p = Pilmage.open(filename)
-            if p.width > p.height:
-                if p.height > 1080:
-                    # landscape, resize in a way that the height is 1080 respecting the aspect ratio
-                    p = p.resize((int(p.width * 1080 / p.height), 1080))
-            else:
-                if p.width > 1920:
-                    # portrait, resize in a way that the width is 1920 respecting the aspect ratio
-                    p = p.resize((1920, int(p.height * 1920 / p.width)))
-            # save the resized image
-            p.save(filename)
+            # # resize the image to reduce workload
+            # p = Pilmage.open(filename)
+            # if p.width > p.height:
+            #     if p.height > 1080:
+            #         # landscape, resize in a way that the height is 1080 respecting the aspect ratio
+            #         p = p.resize((int(p.width * 1080 / p.height), 1080))
+            # else:
+            #     if p.width > 1920:
+            #         # portrait, resize in a way that the width is 1920 respecting the aspect ratio
+            #         p = p.resize((1920, int(p.height * 1920 / p.width)))
+            # # save the resized image
+            # p.save(filename)
+            # p.close()
 
             if self.drop[_id]:
                 self.drop[_id] = False
