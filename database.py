@@ -169,13 +169,22 @@ class Database:
                                 text=True)
         self.lock.acquire()
         cursor = Cursor()
-        print("album", album, "len", len(result.stdout.splitlines()))
         cursor.execute('''UPDATE my_table SET touched = 0 WHERE remote = ? and album = ?''', (remote, album))
+
+        # new entry have touched = 2
+        min_seen = cursor.execute('SELECT MIN(seen) FROM my_table').fetchone()[0]
 
         for line in result.stdout.splitlines():
             filename, hash = line.split(";")
             cursor.execute('''INSERT INTO my_table (remote, album, file, hash, touched) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(album,file) DO UPDATE SET touched = 1''', (remote, album, filename, hash, 1))
+                ON CONFLICT(album,file) DO UPDATE SET touched = 1''', (remote, album, filename, hash, 2))
+
+
+        print("album", album, "len", len(result.stdout.splitlines()), "min_seen", min_seen)
+
+
+        # update the seen of the touched == 2 to the min_seen
+        cursor.execute('UPDATE my_table SET seen = ? WHERE touched = 2', (min_seen,), commit=True)
 
         cursor.execute('DELETE FROM my_table WHERE touched = 0')
         cursor.close(True)
@@ -210,7 +219,7 @@ class Database:
 
         # get the ids of the images that have been seen the least but unique on hash
         ids = Cursor().fetch_all('SELECT id FROM my_table WHERE seen = ? GROUP BY hash', (min_seen,), close=True)
-        #ids = Cursor().fetch_all('SELECT id FROM my_table WHERE seen = ?', (min_seen,), close=True)
+        # ids = Cursor().fetch_all('SELECT id FROM my_table WHERE seen = ?', (min_seen,), close=True)
         self.lock.release()
         return [x[0] for x in ids]
 
@@ -237,3 +246,9 @@ class Database:
         self.lock.acquire()
         Cursor().execute('UPDATE my_table SET seen = seen + 1 WHERE id = ?', (index,), commit=True, close=True)
         self.lock.release()
+
+    def get_less_seen_count(self):
+        self.lock.acquire()
+        result = Cursor().fetch_one('SELECT MIN(seen) FROM my_table', close=True)
+        self.lock.release()
+        return result[0]

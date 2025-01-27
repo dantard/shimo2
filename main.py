@@ -205,11 +205,11 @@ class ImageWindow(QMainWindow):
         self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self.time = self.scene.addSimpleText("00:00")
-        self.time.setPen(QPen(Qt.black, 2))
+        self.time.setPen(QPen(Qt.black, 1))
         self.info = self.scene.addSimpleText("")
-        self.info.setPen(QPen(Qt.black, 2))
+        self.info.setPen(QPen(Qt.black, 1))
         self.hr_info = self.scene.addSimpleText("")
-        self.hr_info.setPen(QPen(Qt.black, 2))
+        self.hr_info.setPen(QPen(Qt.black, 1))
 
         # Change clock font size and color
         print(self.cfg_clock_size.get_value())
@@ -278,7 +278,7 @@ class ImageWindow(QMainWindow):
                 self.wait.start(1000)
             else:
                 self.blur_out.start(10)
-                self.time.setPen(QPen(Qt.black, 2))
+                self.time.setPen(QPen(Qt.black, 1))
         elif effect == self.blur_out:
             self.chooser.start(0)
 
@@ -383,7 +383,12 @@ class ImageWindow(QMainWindow):
                 for i in range(len(vector1)):
                     album = vector1[i][0]
                     active1 = vector1[i][1]
-                    active2 = vector2[i][1]
+
+                    if len(vector2) > i:
+                        active2 = vector2[i][1]
+                    else:
+                        active2 = False
+
                     if active1 != active2:
                         updating.append((album, active2))
                 results[remote1] = updating
@@ -455,6 +460,8 @@ class ImageWindow(QMainWindow):
                 image_album += "\n" + str(exif_data)
 
         pixmap = QPixmap("cache/" + folder + "/" + file)
+
+        os.remove("cache/" + folder + "/" + file)
 
         if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
             return False
