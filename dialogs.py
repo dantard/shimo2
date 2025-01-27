@@ -130,6 +130,7 @@ class RemoteDialog(QDialog):
         # layout.addWidget(cancelButton)
         # self.treeWidget.itemClicked.connect(self.item_clicked)
 
+        self.setMinimumHeight(800)
         # Set the layout for the dialog
         self.setLayout(layout)
         self.populate()
@@ -216,7 +217,11 @@ class RemoteDialog(QDialog):
         return result
 
     def add_folder(self):
-        pass
+        folder = QFileDialog.getExistingDirectory(self, "Select Directory")
+        if folder:
+            self.db.add_folder(folder)
+            self.db.update_folder(folder)
+            self.populate()
 
 
 '''

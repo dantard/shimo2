@@ -1,3 +1,4 @@
+import os
 import random
 import sqlite3
 import subprocess
@@ -85,19 +86,34 @@ class Database:
         # Commit the changes
         self.connection.commit()
 
+    def add_folder(self, folder):
+        Cursor().execute('INSERT INTO remotes (name) VALUES (?)', ("file:"+folder,), commit=True, close=True)
+
+    def update_folder(self, remote):
+        sub_dirs = os.listdir(remote)
+        sub_dirs = [(x, 'hash') for x in sub_dirs]
+
+        self.update_albums("file:"+ remote, sub_dirs)
+
+    def add_remote(self, remote):
+        Cursor().execute('INSERT INTO remotes (name) VALUES (?)', (remote,), commit=True, close=True)
+
     def update_remote(self, remote):
 
         result = subprocess.run(['rclone', "lsf", remote, "--max-depth", "1", "--format", "pi"], stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
                                 text=True)
-
-        cursor = Cursor()
-        cursor.execute('''UPDATE albums SET touched = ? where remote = ?''', (0, remote))
         folders = []
         for line in result.stdout.splitlines():
             album, hash = line.split(";")
             folders.append((album, hash))
         folders.sort(key=lambda x: x[0], reverse=True)
+
+        self.update_albums(remote, folders)
+
+    def update_albums(self, remote, folders):
+        cursor = Cursor()
+        cursor.execute('''UPDATE albums SET touched = ? where remote = ?''', (0, remote))
 
         for album, hash in folders:
             cursor.execute('''INSERT INTO albums (remote, title, active, touched)
@@ -160,13 +176,25 @@ class Database:
         Cursor().execute('UPDATE albums SET active = ? where remote = ? and title = ?', (active, remote, album),
                          commit=True, close=True)
 
-    def update_album(self, remote, album):
+    def update_folder_album(self, remote, album):
+        self.update_files("file:" + remote, album, [(x, x) for x in os.listdir(remote.replace("file:", "") + "/" + album)])
+
+    def update_remote_album(self, remote, album):
 
         result = subprocess.run(['rclone', "lsf", remote + "/" + album,
                                  "--max-depth", "2", "--format", "pi"],
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
                                 text=True)
+        lines = result.stdout.splitlines()
+        files = []
+        for line in lines:
+            filename, hash = line.split(";")
+            files.append((filename, hash))
+        self.update_files(remote, album, files)
+
+    def update_files(self, remote, album, files):
+
         self.lock.acquire()
         cursor = Cursor()
         cursor.execute('''UPDATE my_table SET touched = 0 WHERE remote = ? and album = ?''', (remote, album))
@@ -174,14 +202,13 @@ class Database:
         # new entry have touched = 2
         min_seen = cursor.execute('SELECT MIN(seen) FROM my_table').fetchone()[0]
 
-        for line in result.stdout.splitlines():
-            filename, hash = line.split(";")
-            cursor.execute('''INSERT INTO my_table (remote, album, file, hash, touched) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(album,file) DO UPDATE SET touched = 1''', (remote, album, filename, hash, 2))
+        if min_seen is None:
+            min_seen = 0
 
+        for filename, hash in files:
 
-        print("album", album, "len", len(result.stdout.splitlines()), "min_seen", min_seen)
-
+            cursor.execute('''INSERT INTO my_table (remote, album, file, hash, touched, seen) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(album,file) DO UPDATE SET touched = 1''', (remote, album, filename, hash, 2, 0))
 
         # update the seen of the touched == 2 to the min_seen
         cursor.execute('UPDATE my_table SET seen = ? WHERE touched = 2', (min_seen,), commit=True)
@@ -190,8 +217,6 @@ class Database:
         cursor.close(True)
         self.lock.release()
 
-    def add_remote(self, remote):
-        Cursor().execute('INSERT INTO remotes (name) VALUES (?)', (remote,), commit=True, close=True)
 
     def remove_remote(self, remote):
         Cursor().execute('DELETE FROM remotes WHERE name = ?', (remote,), commit=True, close=True)

@@ -45,6 +45,8 @@ class Downloader:
         for id in ids:
             self.photos_queue.put(id)
 
+        print("shuffle0", ids)
+
     def shuffle2(self, clear=True):
         if clear:
             self.clear_queue()
@@ -140,10 +142,12 @@ class Downloader:
 
             remote, folder, file, hashed = info
 
+            if remote.startswith("file:"):
+                self.queue.put(index)
+                continue
+
             file_ext = os.path.splitext(file.lower())[-1]
             cache_folder = "cache/" + folder + "/"
-
-            # print("TASK", ids, "Downloading", folder, file)
 
             if os.path.exists(cache_folder + file) or os.path.exists(cache_folder + file + ".jpg"):
                 # print("TASK", ids, "already downloaded", folder, file)

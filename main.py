@@ -162,7 +162,7 @@ class ImageWindow(QMainWindow):
                                                      max=120, den=1, fmt="{:.0f}", label_width=40)
 
         animation = self.config.root().addSubSection("Animation")
-        self.cfg_delay = animation.addSlider("delay", pretty="Delay", default=10, min=5, max=60, den=1, fmt="{:.0f}",
+        self.cfg_delay = animation.addSlider("delay", pretty="Delay", default=10, min=0, max=60, den=1, fmt="{:.0f}",
                                              label_width=40)
         self.cfg_zoom_type = animation.addSlider("zoom_type", pretty="Zoom Type", default=2, min=0, max=2, den=1,
                                                  fmt="{:.0f}")
@@ -260,7 +260,7 @@ class ImageWindow(QMainWindow):
         #QTimer.singleShot(0, self.choose)
         self.chooser.start(0)
 
-        self.showFullScreen()
+        #self.showFullScreen()
 
     def effect_done(self, effect):
         if effect is self.chooser:
@@ -346,14 +346,17 @@ class ImageWindow(QMainWindow):
             return tags.get("EXIF DateTimeOriginal")
 
     def update_albums_async(self, result):
-
+        print("RESULTS", result)
         def do(result1):
             self.update_running = True
             i, j = 1, 1
             for remote, vector in result1.items():
                 for album, active in vector:
                     if active:
-                        self.db.update_album(remote, album)
+                        if remote.startswith("file:"):
+                            self.db.update_folder_album(remote.replace("file:", ""), album)
+                        else:
+                            self.db.update_remote_album(remote, album)
                         self.updating.emit(album, i, len(result1), j, len(vector))
                         QApplication.processEvents()
                         j += 1
@@ -436,6 +439,13 @@ class ImageWindow(QMainWindow):
 
         remote, folder, file, hashed = info
 
+        print("INFO", info)
+
+        if remote.startswith("file:"):
+            prefix = remote.replace("file:", "") + "/"
+        else:
+            prefix = "cache/"
+
         self.db.increment_seen(index)
         self.image_info = info
 
@@ -445,21 +455,21 @@ class ImageWindow(QMainWindow):
         if file.lower().endswith(".heic"):
             file += ".jpg"
 
-        if not os.path.exists("cache/" + folder + "/" + file):
+        if not os.path.exists(prefix + folder + "/" + file):
             return False
 
         image_album = "\n".join(albums)
 
         if self.cfg_show_date.get_value():
-            exif_data = self.extract_date_from_exif("cache/" + folder + "/" + file)
+            exif_data = self.extract_date_from_exif(prefix + folder + "/" + file)
             if exif_data is not None:
                 exif_data = str(exif_data).split(" ")[0]
                 exif_data = exif_data.replace(":", "-")
                 image_album += "\n" + str(exif_data)
 
-        pixmap = QPixmap("cache/" + folder + "/" + file)
+        pixmap = QPixmap(prefix + folder + "/" + file)
 
-        os.remove("cache/" + folder + "/" + file)
+        os.remove(prefix + folder + "/" + file)
 
         if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
             return False
@@ -501,7 +511,10 @@ class ImageWindow(QMainWindow):
         data = {}
         for remote in remotes:
             print("Update remote", remote, "albums")
-            self.db.update_remote(remote)
+            if remote.startswith("file:"):
+                self.db.update_folder(remote.replace("file:", ""))
+            else:
+                self.db.update_remote(remote)
 
             data[remote] = []
             albums = self.db.get_albums(remote)
