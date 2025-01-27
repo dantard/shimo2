@@ -10,8 +10,8 @@ from PIL import Image as Pilmage
 
 
 class Downloader:
-
     MAX_THREADS = 5
+
     def __init__(self, database):
         self.loop_mode = 1
         self.directory = "shared-album"
@@ -60,7 +60,7 @@ class Downloader:
                     for id in photo_ids:
                         self.photos_queue.put(id)
 
-    def play(self,remote, title):
+    def play(self, remote, title):
         ids = self.db.get_ids_by_album(remote, title)
 
         print("play", remote, title, ids)
@@ -143,6 +143,14 @@ class Downloader:
             remote, folder, file, hashed = info
 
             if remote.startswith("file:"):
+                filename = remote.replace("file:", "") + "/" + folder + "/" + file
+                if filename.endswith(".heic"):
+                    if not os.path.exists(filename + ".jpg"):
+                        subprocess.run(["convert", filename, filename + ".jpg"],
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE,
+                                       text=True)
+                        print("converted", filename, "to", filename + ".jpg")
                 self.queue.put(index)
                 continue
 
@@ -208,6 +216,3 @@ class Downloader:
                 self.drop[_id] = False
             else:
                 self.queue.put(index)
-
-
-

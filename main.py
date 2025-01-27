@@ -65,7 +65,8 @@ class Effect(QTimer):
 
 class BlurInEffect(Effect):
     def effect(self):
-        self.pixmap.setOpacity(self.pixmap.opacity() + self.value.get_value() / 250)
+        value = self.value.get_value()
+        self.pixmap.setOpacity(self.pixmap.opacity() + (value if value > 0 else 250) / 250)
         if self.pixmap.opacity() >= 1:
             self.stop()
             self.done.emit(self)
@@ -97,8 +98,14 @@ class ZoomInEffect(Effect):
 
 class BlurOutEffect(Effect):
     def effect(self):
-        self.pixmap.setOpacity(self.pixmap.opacity() - self.value.get_value() / 250)
-        if self.pixmap.opacity() <= 0:
+        value = self.value.get_value()
+        if value > 0:
+            self.pixmap.setOpacity(self.pixmap.opacity() - self.value.get_value() / 250)
+            if self.pixmap.opacity() <= 0:
+                self.stop()
+                self.done.emit(self)
+        else:
+            self.pixmap.setOpacity(1)
             self.stop()
             self.done.emit(self)
 
@@ -166,11 +173,11 @@ class ImageWindow(QMainWindow):
                                              label_width=40)
         self.cfg_zoom_type = animation.addSlider("zoom_type", pretty="Zoom Type", default=2, min=0, max=2, den=1,
                                                  fmt="{:.0f}")
-        self.cfg_zoom_speed = animation.addSlider("zoom_speed", pretty="Zoom Speed", default=0, min=0, max=10, den=1,
+        self.cfg_zoom_speed = animation.addSlider("zoom_speed", pretty="Zoom Speed", default=5, min=1, max=10, den=1,
                                                   fmt="{:.0f}", label_width=40)
-        self.cfg_blur_in = animation.addSlider("blur_in", pretty="Blur in", default=0, min=0, max=10, den=1,
+        self.cfg_blur_in = animation.addSlider("blur_in", pretty="Blur in", default=5, min=0, max=10, den=1,
                                                fmt="{:.0f}", label_width=40)
-        self.cfg_blur_out = animation.addSlider("blur_out", pretty="Blur out", default=0, min=0, max=10, den=1,
+        self.cfg_blur_out = animation.addSlider("blur_out", pretty="Blur out", default=5, min=0, max=10, den=1,
                                                 fmt="{:.0f}", label_width=40)
         self.loop_mode = animation.addCombobox("loop_mode", pretty="Loop Mode",
                                                items=["Random", "One per Album", "Complete albums"])
@@ -238,7 +245,7 @@ class ImageWindow(QMainWindow):
         self.clock_timer.start(1000)
 
         self.update_timer = QTimer()
-        #self.update_timer.timeout.connect(self.auto_update)
+        # self.update_timer.timeout.connect(self.auto_update)
         self.update_timer.start(1000 * 60 * 60 * 24)
 
         self.blur_in = BlurInEffect(self.pixmap, self.cfg_blur_in)
@@ -257,10 +264,10 @@ class ImageWindow(QMainWindow):
         shortcut = QShortcut(QtGui.QKeySequence("Esc"), self)
         shortcut.activated.connect(self.toggle_fullscreen)
 
-        #QTimer.singleShot(0, self.choose)
+        # QTimer.singleShot(0, self.choose)
         self.chooser.start(0)
 
-        #self.showFullScreen()
+        # self.showFullScreen()
 
     def effect_done(self, effect):
         if effect is self.chooser:
@@ -347,6 +354,7 @@ class ImageWindow(QMainWindow):
 
     def update_albums_async(self, result):
         print("RESULTS", result)
+
         def do(result1):
             self.update_running = True
             i, j = 1, 1
@@ -364,7 +372,8 @@ class ImageWindow(QMainWindow):
                         self.db.remove_album(remote, album)
 
                     self.db.update_album_active(remote, album, active)
-                i += 1
+                i, j = i + 1, 1
+                time.sleep(1)
 
             self.downloader.shuffle()
             self.updating.emit("Done", 0, 0, 0, 0)
@@ -399,11 +408,11 @@ class ImageWindow(QMainWindow):
     def set_screen_power(self, value):
         self.screen_on = value
         if value:
-            #os.system("xset dpms force on")  # For Linux
-            os.system("/usr/bin/xrandr --output HDMI-1 --auto")#vservice -p && sudo chvt 6 && sudo chvt 7")
+            # os.system("xset dpms force on")  # For Linux
+            os.system("/usr/bin/xrandr --output HDMI-1 --auto")  # vservice -p && sudo chvt 6 && sudo chvt 7")
         else:
-            #os.system("xset dpms force off")  # For Linux
-            #os.system("/usr/bin/tvservice -o")
+            # os.system("xset dpms force off")  # For Linux
+            # os.system("/usr/bin/tvservice -o")
             os.system("/usr/bin/xrandr --output HDMI-1 --off")
 
     def toggle_fullscreen(self):
@@ -441,7 +450,9 @@ class ImageWindow(QMainWindow):
 
         print("INFO", info)
 
-        if remote.startswith("file:"):
+        is_folder = remote.startswith("file:")
+
+        if is_folder:
             prefix = remote.replace("file:", "") + "/"
         else:
             prefix = "cache/"
@@ -469,7 +480,8 @@ class ImageWindow(QMainWindow):
 
         pixmap = QPixmap(prefix + folder + "/" + file)
 
-        os.remove(prefix + folder + "/" + file)
+        if not is_folder:
+            os.remove(prefix + folder + "/" + file)
 
         if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
             return False
@@ -527,15 +539,14 @@ class ImageWindow(QMainWindow):
 
     def set_picture(self, pixmap, image_album):
 
-
         self.title.setText(image_album)
         self.hr_info.setText(str(self.downloader.photos_queue.qsize()))
 
         self.pixmap.setPixmap(pixmap)
         self.center_image()
 
-        w_ratio = self.scene.sceneRect().width() / self.pixmap.pixmap().width()
-        h_ratio = self.scene.sceneRect().height() / self.pixmap.pixmap().height()
+        w_ratio = self.view.viewport().width() / self.pixmap.pixmap().width()
+        h_ratio = self.view.viewport().height() / self.pixmap.pixmap().height()
 
         if self.cfg_zoom_type.get_value() in [0, 2]:
             self.pixmap.setScale(min(w_ratio, h_ratio))

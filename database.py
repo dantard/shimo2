@@ -90,9 +90,7 @@ class Database:
         Cursor().execute('INSERT INTO remotes (name) VALUES (?)', ("file:"+folder,), commit=True, close=True)
 
     def update_folder(self, remote):
-        sub_dirs = os.listdir(remote)
-        sub_dirs = [(x, 'hash') for x in sub_dirs]
-
+        sub_dirs = [(d, d) for d in os.listdir(remote) if os.path.isdir(os.path.join(remote, d))]
         self.update_albums("file:"+ remote, sub_dirs)
 
     def add_remote(self, remote):
@@ -177,7 +175,9 @@ class Database:
                          commit=True, close=True)
 
     def update_folder_album(self, remote, album):
-        self.update_files("file:" + remote, album, [(x, x) for x in os.listdir(remote.replace("file:", "") + "/" + album)])
+        path = remote.replace("file:", "") + "/" + album
+        files = [(x, x) for x in os.listdir(path) if os.path.isfile(os.path.join(path, x)) and x.lower().endswith(('.jpg'))]
+        self.update_files("file:" + remote, album, files)
 
     def update_remote_album(self, remote, album):
 
