@@ -266,7 +266,7 @@ class ImageWindow(QMainWindow):
         if effect is self.chooser:
             self.blur_in.start(10)
         elif effect == self.blur_in:
-            self.zoom.start(10)
+            self.zoom.start(25)
         elif effect == self.zoom:
             print("Start wait", self.cfg_delay.get_value() * 1000)
             self.wait.start(int(self.cfg_delay.get_value() * 1000))
