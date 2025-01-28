@@ -8,9 +8,11 @@ import threading
 import time
 from PIL import Image as Pilmage
 
+import utils
+
 
 class Downloader:
-    MAX_THREADS = 5
+    MAX_THREADS = 3
 
     def __init__(self, database):
         self.cache_size = 0
@@ -26,9 +28,9 @@ class Downloader:
     def get_cache_size(self):
         return self.cache_size
 
-    def set_loop_mode(self, mode):
+    def set_loop_mode(self, mode, clear=True):
         self.loop_mode = mode
-        self.shuffle(True)
+        self.shuffle(clear)
 
     def clear_queue(self):
 
@@ -46,10 +48,10 @@ class Downloader:
             self.clear_queue()
         ids = self.db.get_ids_by_seen()
         random.shuffle(ids)
-        for id in ids:
-            self.photos_queue.put(id)
+        for x in ids:
+            self.photos_queue.put(x)
 
-        print("shuffle0", ids)
+        print("DOWNLOADER: Running shuffle0")
 
     def shuffle2(self, clear=True):
         if clear:
@@ -61,13 +63,13 @@ class Downloader:
             for _, title, active in albums:
                 if active:
                     photo_ids = self.db.get_ids_by_album(remote, title)
-                    for id in photo_ids:
-                        self.photos_queue.put(id)
+                    for x in photo_ids:
+                        self.photos_queue.put(x)
 
     def play(self, remote, title):
         ids = self.db.get_ids_by_album(remote, title)
 
-        print("play", remote, title, ids)
+        print("DOWNLOADER: Playing", remote, title, len(ids))
         self.clear_queue()
         for id in ids:
             self.photos_queue.put(id)
@@ -104,7 +106,6 @@ class Downloader:
             albums = self.db.get_albums(remote)
             for _, title, active in albums:
                 if active:
-                    print("albums", title)
                     photo_ids = self.db.get_ids_by_album(remote, title)
                     random.shuffle(photo_ids)
                     ids.append(Container(photo_ids))
@@ -135,25 +136,18 @@ class Downloader:
         return self.queue.empty()
 
     def deal_with_heif(self, filename, output):
-        result = subprocess.run(["identify", "-format", '%w,%h', filename], stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True, check=True)
-        if result.returncode != 0:
+        ok, result = utils.run_command(["identify", "-format", '%w,%h', filename], stdout=True)
+        if not ok:
             return False
 
-        w, h = result.stdout.split(",")
+        w, h = result.split(",")
         w, h = int(w), int(h)
         if w > h:
             fmt = ["-resize", "x1080"] if h > 1080 else []
         else:
             fmt = ["-resize", "1920x"] if w > 1920 else []
 
-        result = subprocess.run(
-            ["convert"] + fmt + [filename, output],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True)
-        print(["convert"] + fmt + [filename, output], result.returncode, result.stdout, result.stderr)
-        return result.returncode == 0
+        return utils.run_command(["convert"] + fmt + [filename, output])
 
     def download(self, _id):
         while True:
@@ -178,17 +172,20 @@ class Downloader:
 
                 # if it is a heic file, convert it to jpg
                 if filename.endswith(".heic"):
-                    self.deal_with_heif(filename, filename + ".jpg")
+                    if not self.deal_with_heif(filename, filename + ".jpg"):
+                        continue
 
                 # put the index in the choose queue
                 self.queue.put(index)
                 continue
 
             # if it is a remote file
-            file_ext = os.path.splitext(file.lower())[-1]
             cache_folder = "cache/" + folder + "/"
+            file_ext = os.path.splitext(file.lower())[-1]
 
+            # if the file already in the cache folder and continue
             if os.path.exists(cache_folder + file) or os.path.exists(cache_folder + file + ".jpg"):
+                print("DOWNLOADER: Image already in cache", cache_folder + file)
                 self.queue.put(index)
                 continue
 
@@ -200,53 +197,37 @@ class Downloader:
             os.makedirs(cache_folder, exist_ok=True)
 
             # get the file from the remote
-            result = subprocess.run(
-                ['rclone', "copy", remote + "/" + folder + "/" + file, cache_folder],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True)
-
-            # if the file was not downloaded, skip
-            if result.returncode != 0:
+            if not utils.run_command(['rclone', "copy", remote + "/" + folder + "/" + file, cache_folder]):
+                # if the file was not downloaded, skip
+                print("DOWNLOADER: Error downloading", remote + "/" + folder + "/" + file)
                 continue
 
             # if it is a heic file, convert it to jpg
             if file_ext in [".heic"]:
                 filename = cache_folder + file
 
+                print("DOWNLOADER: Convert .heic file", filename)
                 if not self.deal_with_heif(filename, filename + ".jpg"):
+                    print("DOWNLOADER: Error converting", filename)
                     os.remove(filename)
                     continue
 
                 os.remove(filename)
 
+            print("DOWNLOADER: Ready to show", index, "aka", cache_folder + file)
             # Update the cache size
-            result = subprocess.run(
-                ['du', "-sm", "cache"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True)
-
-            size, _ = result.stdout.split("\t")
-            self.cache_size = int(size)
+            ok, result = utils.run_command(['du', '-sm', 'cache'], stdout=True)
+            if ok:
+                size, _ = result.split("\t")
+                self.cache_size = int(size)
 
             # if I don't need to drop the photo
             # put the index in the choose queue
             if self.drop[_id]:
+                print("DOWNLOADER: Drop", index)
                 self.drop[_id] = False
             else:
                 self.queue.put(index)
+                print("DOWNLOADER: Push", index, "size",self.queue.qsize())
 
-    def run_command(self, command):
-        if type(command) == str:
-            command = command.split(" ")
-        try:
-            result = subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True)
-        except Exception as e:
-            pass
 
-        return result.returncode == 0, result.stdout, result.stderr

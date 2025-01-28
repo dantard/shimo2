@@ -157,7 +157,6 @@ class RemoteDialog(QDialog):
                 rclone.create_remote(remote_name, RemoteTypes.google_photos)
                 remote = remote_name + ":"
             path = dialog.get_path()
-            print("rerer", remote, path)
             self.db.add_remote(remote + path)
             self.pd = Progressing(self, title="Syncing")
 

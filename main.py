@@ -3,7 +3,7 @@ import sys
 import threading
 import time
 from datetime import datetime
-from datetime import time as time2
+from datetime import time as dttime
 import exifread
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QTimer, QRectF, QTime, pyqtSignal
@@ -13,133 +13,17 @@ from easyconfig.EasyConfig import EasyConfig
 from rclone_python import rclone
 from rclone_python.remote_types import RemoteTypes
 
+import utils
 from database import Database
 from dialogs import RemoteDialog, SelectRemote
 from downloader import Downloader
+from effects import BlurInEffect, ZoomInEffect, WaitEffect, BlurOutEffect, Choose
+from graphics_view import MyQGraphicsView
 from progressing import Progressing
-
-
-class MyQGraphicsView(QGraphicsView):
-    save = pyqtSignal()
-    delete = pyqtSignal()
-    moved = pyqtSignal()
-
-    def __init__(self, a):
-        super().__init__(a)
-        self.setMouseTracking(True)
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.mouse_timer)
-
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
-        super().mouseReleaseEvent(event)
-
-    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
-        super().mouseDoubleClickEvent(event)
-        is_left_side = event.x() < self.width() / 2
-        if is_left_side:
-            self.save.emit()
-        else:
-            self.delete.emit()
-
-    def mouseMoveEvent(self, a0: QtGui.QMouseEvent) -> None:
-        super().mouseMoveEvent(a0)
-        self.timer.stop()
-        self.timer.start(2500)
-        self.setCursor(Qt.ArrowCursor)
-        self.moved.emit()
-
-    def mouse_timer(self):
-        self.timer.stop()
-        self.setCursor(Qt.BlankCursor)
-
-
-class Effect(QTimer):
-    done = pyqtSignal(object)
-
-    def __init__(self, pixmap, value):
-        super().__init__()
-        self.pixmap = pixmap
-        self.value = value
-        self.timeout.connect(self.effect)
-
-
-class BlurInEffect(Effect):
-    def effect(self):
-        value = self.value.get_value()
-        self.pixmap.setOpacity(self.pixmap.opacity() + (value if value > 0 else 250) / 250)
-        if self.pixmap.opacity() >= 1:
-            self.stop()
-            self.done.emit(self)
-
-
-class Choose(Effect):
-    def __init__(self, func):
-        super().__init__(None, func)
-        self.setSingleShot(True)
-
-    def effect(self):
-        if self.value():
-            self.done.emit(self)
-        else:
-            self.setSingleShot(True)
-            self.start(1000)
-
-
-class ZoomInEffect(Effect):
-    def effect(self):
-        w, h = self.pixmap.pixmap().width(), self.pixmap.pixmap().height()
-        zoom = self.pixmap.scale()
-        self.pixmap.setTransformOriginPoint(w / 2, h / 2)
-        self.pixmap.setScale(zoom + self.value.get_value() / 1000)
-        if w * zoom >= self.pixmap.scene().width() and h * zoom >= self.pixmap.scene().height():
-            self.stop()
-            self.done.emit(self)
-
-
-class BlurOutEffect(Effect):
-    def effect(self):
-        value = self.value.get_value()
-        if value > 0:
-            self.pixmap.setOpacity(self.pixmap.opacity() - self.value.get_value() / 250)
-            if self.pixmap.opacity() <= 0:
-                self.stop()
-                self.done.emit(self)
-        else:
-            self.pixmap.setOpacity(1)
-            self.stop()
-            self.done.emit(self)
-
-
-class WaitEffect(Effect):
-    def effect(self):
-        self.stop()
-        self.done.emit(self)
 
 
 class ImageWindow(QMainWindow):
     updating = pyqtSignal(str, int, int, int, int)
-
-    def is_within_time_span(self, start_time, end_time, check_time=None):
-        """
-        Determines if a given time is within a time span.
-
-        Args:
-            start_time (time): The start of the time span.
-            end_time (time): The end of the time span.
-            check_time (time, optional): The time to check. Defaults to the current time.
-
-        Returns:
-            bool: True if the check_time is within the time span, False otherwise.
-        """
-        if check_time is None:
-            check_time = datetime.now().time()
-
-        # If the time span does not cross midnight
-        if start_time <= end_time:
-            return start_time <= check_time < end_time
-        # If the time span crosses midnight
-        else:
-            return check_time >= start_time or check_time < end_time
 
     def __init__(self):
         super().__init__()
@@ -152,6 +36,15 @@ class ImageWindow(QMainWindow):
         self.update_running = False
         self.setWindowTitle("Image Viewer")
         self.config = EasyConfig()
+
+        general = self.config.root().addSubSection("General")
+        self.cfg_cache_size = general.addSlider("cache_size", pretty="Cache Size (GB)", default=1, min=0, max=100, den=10,
+                                            fmt="{:.1f}", label_width=60)
+
+        self.update_on_turn_off = general.addCombobox("auto_update", pretty="Auto Update",
+                                                      items=["Off", "On screen off", "Every 24h", "Every week"], default=0)
+
+        self.turn_on = general.addList("turn_on", pretty="Turn on (hh:mm/hh:mm)", default=[])
 
         appearance = self.config.root().addSubSection("Appearance")
 
@@ -217,8 +110,6 @@ class ImageWindow(QMainWindow):
         self.hr_info.setPen(QPen(Qt.black, 1))
 
         # Change clock font size and color
-        print(self.cfg_clock_size.get_value())
-
         self.time.setFont(QFont("Arial", int(self.cfg_clock_size.get_value())))
         self.time.setBrush(Qt.white)
 
@@ -237,7 +128,7 @@ class ImageWindow(QMainWindow):
 
         self.db = Database()
         self.downloader = Downloader(self.db)
-        self.downloader.set_loop_mode(self.loop_mode.get_value())
+        self.downloader.set_loop_mode(self.loop_mode.get_value(), False)
         self.downloader.start()
 
         self.clock_timer = QTimer()
@@ -245,8 +136,9 @@ class ImageWindow(QMainWindow):
         self.clock_timer.start(1000)
 
         self.update_timer = QTimer()
-        # self.update_timer.timeout.connect(self.auto_update)
-        self.update_timer.start(1000 * 60 * 60 * 24)
+        self.update_timer.timeout.connect(self.auto_update)
+
+        self.set_update_timer()
 
         self.blur_in = BlurInEffect(self.pixmap, self.cfg_blur_in)
         self.zoom = ZoomInEffect(self.pixmap, self.cfg_zoom_speed)
@@ -264,18 +156,24 @@ class ImageWindow(QMainWindow):
         shortcut = QShortcut(QtGui.QKeySequence("Esc"), self)
         shortcut.activated.connect(self.toggle_fullscreen)
 
-        # QTimer.singleShot(0, self.choose)
+        # Start the chooser
         self.chooser.start(0)
 
         # self.showFullScreen()
 
+    def set_update_timer(self):
+        self.update_timer.stop()
+        if self.update_on_turn_off.get_value() == 2:
+            self.update_timer.start(1000 * 60 * 60 * 24)
+        elif self.update_on_turn_off.get_value() == 3:
+            self.update_timer.start(1000 * 60 * 60 * 24 * 7)
     def effect_done(self, effect):
         if effect is self.chooser:
             self.blur_in.start(10)
         elif effect == self.blur_in:
             self.zoom.start(25)
         elif effect == self.zoom:
-            print("Start wait", self.cfg_delay.get_value() * 1000)
+            print("CONSUMER: Waiting", self.cfg_delay.get_value() * 1000, "s")
             self.wait.start(int(self.cfg_delay.get_value() * 1000))
         elif effect == self.wait:
             if self.downloader.is_empty():
@@ -342,18 +240,16 @@ class ImageWindow(QMainWindow):
         menu.exec_(event.globalPos())
 
     def edit_config(self):
+        update_when = self.update_on_turn_off.get_value()
         self.config.set_dialog_minimum_size(600, 400)
         self.config.exec()
         self.downloader.set_loop_mode(self.loop_mode.get_value())
         self.config.save("shimo.yaml")
 
-    def extract_date_from_exif(self, image_path):
-        with open(image_path, 'rb') as image_file:
-            tags = exifread.process_file(image_file)
-            return tags.get("EXIF DateTimeOriginal")
+        if update_when != self.update_on_turn_off.get_value():
+            self.set_update_timer()
 
     def update_albums_async(self, result):
-        print("RESULTS", result)
 
         def do(result1):
             self.update_running = True
@@ -379,7 +275,8 @@ class ImageWindow(QMainWindow):
             self.updating.emit("Done", 0, 0, 0, 0)
             self.update_running = False
 
-        threading.Thread(target=do, args=(result,)).start()
+        if not self.update_running:
+            threading.Thread(target=do, args=(result,)).start()
 
     def edit_selection(self):
         dialog = RemoteDialog(self.db, self)
@@ -422,24 +319,49 @@ class ImageWindow(QMainWindow):
         else:
             self.showFullScreen()
 
-    def choose(self):
-        if self.is_within_time_span(time2(7, 0), time2(0, 6)):
+    def timely(self):
+        values = self.turn_on.get_value()
+        if len(values) == 0:
+            turn_on = True
+        else:
+            turn_on = False
+            for data in values:
+                on, off = data.split("/")
+                on = datetime.strptime(on, "%H:%M").time()
+                off = datetime.strptime(off, "%H:%M").time()
+                if utils.is_within_time_span(on, off):
+                    turn_on = True
+
+        print("CONSUMER: Time to turn on", turn_on)
+
+        if turn_on:
             if not self.screen_on:
                 self.set_screen_power(True)
         else:
             if self.screen_on:
                 self.set_screen_power(False)
-                self.auto_update()
-            return False
+                if self.update_on_turn_off.get_value() == 1:
+                    self.auto_update()
 
+        return turn_on
+
+    def choose(self):
+        if not self.timely():
+            return
+
+        # print("CONSUMER: Checking if a photo is available")
         if self.downloader.photos_queue.empty():
             self.downloader.shuffle(False)
+            # print("CONSUMER: No foto")
             return False
 
         # get photo index from que downloader queue (non blocking)
         index = self.downloader.get(False)
+
         if index is None:
             return False
+
+        print("CONSUMER: got photo, index", index)
 
         info = self.db.get_info_from_id(index)
 
@@ -447,8 +369,6 @@ class ImageWindow(QMainWindow):
             return False
 
         remote, folder, file, hashed = info
-
-        print("INFO", info)
 
         is_folder = remote.startswith("file:")
 
@@ -472,7 +392,7 @@ class ImageWindow(QMainWindow):
         image_album = "\n".join(albums)
 
         if self.cfg_show_date.get_value():
-            exif_data = self.extract_date_from_exif(prefix + folder + "/" + file)
+            exif_data = utils.extract_date_from_exif(prefix + folder + "/" + file)
             if exif_data is not None:
                 exif_data = str(exif_data).split(" ")[0]
                 exif_data = exif_data.replace(":", "-")
@@ -481,10 +401,11 @@ class ImageWindow(QMainWindow):
         pixmap = QPixmap(prefix + folder + "/" + file)
 
         if not is_folder:
-            print("CACHE SIZE:", self.downloader.get_cache_size())
-            if self.downloader.get_cache_size() > 1080:
+            print("CONSUMER: Cache size is", self.downloader.get_cache_size(), "MB of ",
+                  self.cfg_cache_size.get_value() * 1000, "MB")
+            if self.downloader.get_cache_size() > self.cfg_cache_size.get_value() * 1000:
                 os.remove(prefix + folder + "/" + file)
-                print("cache size exceeded, removing", prefix + folder + "/" + file)
+                print("CONSUMER: Cache size exceeded, removing", prefix + folder + "/" + file)
 
         if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
             return False
@@ -514,12 +435,12 @@ class ImageWindow(QMainWindow):
         self.set_time_pos()
 
     def auto_update(self):
-        print("Starting auto update")
+        print("CONSUMER: Starting auto update")
         remotes = self.db.get_remotes()
 
         data = {}
         for remote in remotes:
-            print("Update remote", remote, "albums")
+            print("CONSUMER: Updating remote", remote, "albums")
             if remote.startswith("file:"):
                 self.db.update_folder(remote.replace("file:", ""))
             else:
@@ -529,7 +450,7 @@ class ImageWindow(QMainWindow):
             albums = self.db.get_albums(remote)
             for _, title, active in albums:
                 if active:
-                    print("Adding album", title, "to update list")
+                    print("CONSUMER: Adding album", title, "to update list")
                     data[remote].append((title, active))
 
         self.update_albums_async(data)
