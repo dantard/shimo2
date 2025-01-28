@@ -510,12 +510,6 @@ class ImageWindow(QMainWindow):
 
         self.set_time_pos()
 
-        if datetime.now().hour == 23 and datetime.now().minute == 0 and self.screen_on:
-            self.set_screen_power(False)
-
-        if datetime.now().hour == 7 and datetime.now().minute == 0 and not self.screen_on:
-            self.set_screen_power(True)
-
     def auto_update(self):
         print("Starting auto update")
         remotes = self.db.get_remotes()

@@ -130,6 +130,28 @@ class Downloader:
     def is_empty(self):
         return self.queue.empty()
 
+
+    def deal_with_heif(self, filename, output):
+        result = subprocess.run(["identify", "-format", '%w,%h', filename], stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, check=True)
+        if result.returncode != 0:
+            return False
+
+        w, h = result.stdout.split(",")
+        w, h = int(w), int(h)
+        if w > h:
+            fmt = ["-resize", "x1080"] if h > 1080 else []
+        else:
+            fmt = ["-resize", "1920x"] if w > 1920 else []
+
+        result = subprocess.run(
+            ["convert"] + fmt + [filename, output],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True)
+        print(["convert"] + fmt + [filename, output], result.returncode, result.stdout, result.stderr)
+        return result.returncode == 0
+
     def download(self, _id):
         while True:
             # print("TASK ", ids, "RUNNING")
@@ -178,39 +200,42 @@ class Downloader:
             if result.returncode != 0:
                 continue
 
+            # result = subprocess.run(
+            #     ['du', "cache"],
+            #     stdout=subprocess.PIPE,
+            #     stderr=subprocess.PIPE,
+            #     text=True)
+
+
             if file_ext in [".jpg", ".jpeg", ".png"]:
                 filename = cache_folder + file
-
             elif file_ext in [".heic"]:
-                result = subprocess.run(["convert", "cache/" + folder + "/" + file, cache_folder + file + ".jpg"],
-                                        stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE,
-                                        text=True)
-                filename = cache_folder + file + ".jpg"
-                if result.returncode != 0:
-                    print(result.stderr)
+                filename = "cache/" + folder + "/" + file
+
+                if not self.deal_with_heif(filename, filename + ".jpg"):
+                    os.remove(cache_folder + file)
                     continue
 
                 os.remove(cache_folder + file)
             else:
                 continue
 
-            try:
-                # resize the image to reduce workload
-                p = Pilmage.open(filename)
-                if p.width > p.height:
-                    if p.height > 1080:
-                        # landscape, resize in a way that the height is 1080 respecting the aspect ratio
-                        p = p.resize((int(p.width * 1080 / p.height), 1080))
-                else:
-                    if p.width > 1920:
-                        # portrait, resize in a way that the width is 1920 respecting the aspect ratio
-                        p = p.resize((1920, int(p.height * 1920 / p.width)))
-                # save the resized image
-                p.save(filename)
-                p.close()
-            except:
-                pass
+            # try:
+            #     # resize the image to reduce workload
+            #     p = Pilmage.open(filename)
+            #     if p.width > p.height:
+            #         if p.height > 1080:
+            #             # landscape, resize in a way that the height is 1080 respecting the aspect ratio
+            #             p = p.resize((int(p.width * 1080 / p.height), 1080))
+            #     else:
+            #         if p.width > 1920:
+            #             # portrait, resize in a way that the width is 1920 respecting the aspect ratio
+            #             p = p.resize((1920, int(p.height * 1920 / p.width)))
+            #     # save the resized image
+            #     p.save(filename)
+            #     p.close()
+            # except:
+            #     pass
 
             if self.drop[_id]:
                 self.drop[_id] = False
