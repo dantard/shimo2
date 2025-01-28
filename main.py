@@ -59,8 +59,12 @@ class ImageWindow(QMainWindow):
         self.cfg_clock_size = appearance.addSlider("clock_size", pretty="Clock Font Size", default=40, min=20, max=120,
                                                    den=1, fmt="{:.0f}", label_width=40)
 
-        self.cfg_show_tr_info = appearance.addCheckbox("show_hr_info", pretty="Show Remaining", default=True)
-        self.cfg_tr_info_size = appearance.addSlider("tr_info_size", pretty="Remaining Font Size", default=40, min=20,
+        self.cfg_show_tr_info = appearance.addCombobox("cfg_show_tr_info",
+                                                       pretty="Show Info",
+                                                       items=["None", "Remaining", "Queue", "Remaining and Queue", "Elapsed"],
+                                                       default=0)
+
+        self.cfg_tr_info_size = appearance.addSlider("tr_info_size", pretty="Info Font Size", default=40, min=20,
                                                      max=120, den=1, fmt="{:.0f}", label_width=40)
 
         animation = self.config.root().addSubSection("Animation")
@@ -164,6 +168,13 @@ class ImageWindow(QMainWindow):
         if self.start_fullscreen.get_value():
             self.showFullScreen()
 
+    def closeEvent(self, a0) -> None:
+        print("CONSUMER: Closing")
+        self.downloader.stop()
+        print("CONSUMER: Stopped")
+        QApplication.exit()
+
+
     def set_update_timer(self):
         self.update_timer.stop()
         if self.update_on_turn_off.get_value() == 2:
@@ -181,7 +192,7 @@ class ImageWindow(QMainWindow):
         elif effect == self.wait:
             if self.downloader.is_empty():
                 self.time.setPen(QPen(Qt.red, 2))
-                self.wait.start(1000)
+                self.wait.start(1000, False)
             else:
                 self.blur_out.start(10)
                 self.time.setPen(QPen(Qt.black, 1))
@@ -434,7 +445,20 @@ class ImageWindow(QMainWindow):
         font = self.hr_info.font()
         font.setPointSize(int(self.cfg_tr_info_size.get_value()))
         self.hr_info.setFont(font)
-        self.hr_info.setVisible(self.cfg_show_tr_info.get_value())
+        self.hr_info.setVisible(self.cfg_show_tr_info.get_value() > 0)
+        if self.cfg_show_tr_info.get_value() == 1:
+            self.hr_info.setText(f"{self.downloader.photos_queue.qsize()}")
+        elif self.cfg_show_tr_info.get_value() == 2:
+            self.hr_info.setText(f"{self.downloader.queue.qsize()}")
+        elif self.cfg_show_tr_info.get_value() == 3:
+            self.hr_info.setText(f"{self.downloader.photos_queue.qsize()}\n{self.downloader.queue.qsize()}")
+        elif self.cfg_show_tr_info.get_value() == 4:
+            if self.wait.get_started_at() is not None:
+                self.hr_info.setText(f"{time.time() - self.wait.get_started_at():.0f}")
+            else:
+                self.hr_info.setText("")
+
+
 
         self.set_time_pos()
 
@@ -462,7 +486,6 @@ class ImageWindow(QMainWindow):
     def set_picture(self, pixmap, image_album):
 
         self.title.setText(image_album)
-        self.hr_info.setText(str(self.downloader.photos_queue.qsize()))
 
         self.pixmap.setPixmap(pixmap)
         self.center_image()

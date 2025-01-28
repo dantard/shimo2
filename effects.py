@@ -1,3 +1,5 @@
+import time
+
 from PyQt5.QtCore import QTimer, pyqtSignal
 
 
@@ -62,6 +64,19 @@ class BlurOutEffect(Effect):
 
 
 class WaitEffect(Effect):
+    def __init__(self, a, b):
+        super().__init__(a, b)
+        self.started_at = None
+
+    def start(self, msec: int, begin=True) -> None:
+        super().start(msec)
+        if begin:
+            self.started_at = time.time()
+
+    def get_started_at(self):
+        return self.started_at
+
     def effect(self):
         self.stop()
+        self.started_at = None
         self.done.emit(self)

@@ -15,6 +15,7 @@ class Downloader:
     MAX_THREADS = 3
 
     def __init__(self, database, max_threads=MAX_THREADS):
+        self.keep_running = True
         self.cache_size = 0
         self.loop_mode = 1
         self.directory = "shared-album"
@@ -24,9 +25,18 @@ class Downloader:
         self.queue = queue.Queue(self.queue_size)
         self.photos_queue = queue.Queue()
         self.drop = [False] * max_threads
+        self.threads = []
 
     def get_cache_size(self):
         return self.cache_size
+
+    def stop(self):
+
+        self.clear_queue()
+        self.keep_running = False
+
+        for thread in self.threads:
+            thread.join()
 
     def set_loop_mode(self, mode, clear=True):
         self.loop_mode = mode
@@ -34,7 +44,7 @@ class Downloader:
 
     def clear_queue(self):
 
-        for i in range(Downloader.MAX_THREADS):
+        for i in range(len(self.drop)):
             self.drop[i] = True
 
         while not self.queue.empty():
@@ -124,8 +134,10 @@ class Downloader:
 
     def start(self):
         # start the 5 producer tasks
-        for i in range(Downloader.MAX_THREADS):
-            threading.Thread(target=self.download, args=(i,)).start()
+        for i in range(len(self.drop)):
+            thread = threading.Thread(target=self.download, args=(i,))
+            self.threads.append(thread)
+            thread.start()
 
     def get(self, block=True):
         if not block and self.queue.empty():
@@ -150,7 +162,7 @@ class Downloader:
         return utils.run_command(["convert"] + fmt + [filename, output])
 
     def download(self, _id):
-        while True:
+        while self.keep_running:
 
             # Get next photo index
             index = self.photos_queue.get()
