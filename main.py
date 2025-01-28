@@ -32,7 +32,7 @@ class ImageWindow(QMainWindow):
         self.image_info = (None, None, None, None)
         self.fullscreen_menu = None
 
-        self.screen_on = True
+        self.screen_on = False
         self.update_running = False
         self.setWindowTitle("Image Viewer")
         self.config = EasyConfig()
@@ -337,8 +337,6 @@ class ImageWindow(QMainWindow):
                         turn_on = True
             except:
                 turn_on = True
-
-        print("CONSUMER: Time to turn on", turn_on)
 
         if turn_on:
             if not self.screen_on:

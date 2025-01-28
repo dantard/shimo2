@@ -214,7 +214,7 @@ class Downloader:
 
                 os.remove(filename)
 
-            print("DOWNLOADER: Ready to show", index, "aka", cache_folder + file)
+            print("DOWNLOADER: Ready to show", cache_folder + file, "with index", index)
             # Update the cache size
             ok, result = utils.run_command(['du', '-sm', 'cache'], stdout=True)
             if ok:
