@@ -2,6 +2,7 @@ import os
 import queue
 import random
 import threading
+import time
 
 import utils
 
@@ -178,8 +179,8 @@ class Downloader:
 
         return utils.run_command(["convert"] + fmt + [filename, output])
 
-
     def download(self, _id):
+        time.sleep(_id*5)
         while self.keep_running:
 
             # Get next photo index
@@ -253,4 +254,3 @@ class Downloader:
             # if I don't need to drop the photo
             # put the index in the choose queue
             self.photo_indexes_queue.put(index)
-
