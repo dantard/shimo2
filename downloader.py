@@ -14,7 +14,7 @@ import utils
 class Downloader:
     MAX_THREADS = 3
 
-    def __init__(self, database):
+    def __init__(self, database, max_threads=MAX_THREADS):
         self.cache_size = 0
         self.loop_mode = 1
         self.directory = "shared-album"
@@ -23,7 +23,7 @@ class Downloader:
         self.db = database
         self.queue = queue.Queue(self.queue_size)
         self.photos_queue = queue.Queue()
-        self.drop = [False] * Downloader.MAX_THREADS
+        self.drop = [False] * max_threads
 
     def get_cache_size(self):
         return self.cache_size

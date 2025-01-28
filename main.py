@@ -40,6 +40,8 @@ class ImageWindow(QMainWindow):
         general = self.config.root().addSubSection("General")
         self.cfg_cache_size = general.addSlider("cache_size", pretty="Cache Size (GB)", default=1, min=0, max=100, den=10,
                                             fmt="{:.1f}", label_width=60)
+        self.start_fullscreen = general.addCheckbox("start_fullscreen", pretty="Start Fullscreen", default=True)
+        self.threads = general.addCombobox("threads", pretty="Threads (need restart)", items=["1", "2", "3","4","5"], default=2)
 
         self.update_on_turn_off = general.addCombobox("auto_update", pretty="Auto Update",
                                                       items=["Off", "On screen off", "Every 24h", "Every week"], default=0)
@@ -127,7 +129,7 @@ class ImageWindow(QMainWindow):
         self.title.setPen(QPen(Qt.black, 1))
 
         self.db = Database()
-        self.downloader = Downloader(self.db)
+        self.downloader = Downloader(self.db, self.threads.get_value()+1)
         self.downloader.set_loop_mode(self.loop_mode.get_value(), False)
         self.downloader.start()
 
@@ -159,7 +161,8 @@ class ImageWindow(QMainWindow):
         # Start the chooser
         self.chooser.start(0)
 
-        # self.showFullScreen()
+        if self.start_fullscreen.get_value():
+            self.showFullScreen()
 
     def set_update_timer(self):
         self.update_timer.stop()
@@ -324,13 +327,16 @@ class ImageWindow(QMainWindow):
         if len(values) == 0:
             turn_on = True
         else:
-            turn_on = False
-            for data in values:
-                on, off = data.split("/")
-                on = datetime.strptime(on, "%H:%M").time()
-                off = datetime.strptime(off, "%H:%M").time()
-                if utils.is_within_time_span(on, off):
-                    turn_on = True
+            try:
+                turn_on = False
+                for data in values:
+                    on, off = data.split("/")
+                    on = datetime.strptime(on, "%H:%M").time()
+                    off = datetime.strptime(off, "%H:%M").time()
+                    if utils.is_within_time_span(on, off):
+                        turn_on = True
+            except:
+                turn_on = True
 
         print("CONSUMER: Time to turn on", turn_on)
 
