@@ -285,7 +285,9 @@ class ImageWindow(QMainWindow):
                 i, j = i + 1, 1
                 time.sleep(1)
 
+            self.downloader.clear_queues()
             self.downloader.shuffle()
+
             self.updating.emit("Done", 0, 0, 0, 0)
             self.update_running = False
 
@@ -364,14 +366,8 @@ class ImageWindow(QMainWindow):
         if not self.timely():
             return
 
-        # print("CONSUMER: Checking if a photo is available")
-        if self.downloader.photos_queue.empty():
-            self.downloader.shuffle(False)
-            # print("CONSUMER: No foto")
-            return False
-
         # get photo index from que downloader queue (non blocking)
-        index = self.downloader.get(False)
+        index = self.downloader.get()
 
         if index is None:
             return False
@@ -447,11 +443,11 @@ class ImageWindow(QMainWindow):
         self.hr_info.setFont(font)
         self.hr_info.setVisible(self.cfg_show_tr_info.get_value() > 0)
         if self.cfg_show_tr_info.get_value() == 1:
-            self.hr_info.setText(f"{self.downloader.photos_queue.qsize()}")
+            self.hr_info.setText(f"{self.downloader.shuffled_indexes_queue.qsize()}")
         elif self.cfg_show_tr_info.get_value() == 2:
-            self.hr_info.setText(f"{self.downloader.queue.qsize()}")
+            self.hr_info.setText(f"{self.downloader.photo_indexes_queue.qsize()}")
         elif self.cfg_show_tr_info.get_value() == 3:
-            self.hr_info.setText(f"{self.downloader.photos_queue.qsize()}\n{self.downloader.queue.qsize()}")
+            self.hr_info.setText(f"{self.downloader.shuffled_indexes_queue.qsize()}\n{self.downloader.photo_indexes_queue.qsize()}")
         elif self.cfg_show_tr_info.get_value() == 4:
             if self.wait.get_started_at() is not None:
                 self.hr_info.setText(f"{time.time() - self.wait.get_started_at():.0f}")

@@ -1,30 +1,52 @@
 import os
 import queue
 import random
-import struct
-import subprocess
-import sys
 import threading
-import time
-from PIL import Image as Pilmage
 
 import utils
 
 
-class Downloader:
-    MAX_THREADS = 3
+class Lockable(list):
 
-    def __init__(self, database, max_threads=MAX_THREADS):
+    def __init__(self):
+        super().__init__()
+        self.lockaaa = threading.Lock()
+
+    def prepend(self, item):
+        for i in range(len(item)):
+            self.insert(i, item[i])
+
+    def lock(self):
+        self.lockaaa.acquire()
+
+    def unlock(self):
+        self.lockaaa.release()
+
+    def qsize(self):
+        return len(self)
+
+    def put(self, item):
+        super().append(item)
+
+    def empty(self):
+        return len(self) == 0
+
+    def get(self):
+        return super().pop(0)
+
+
+class Downloader:
+    def __init__(self, database, max_threads):
         self.keep_running = True
         self.cache_size = 0
         self.loop_mode = 1
         self.directory = "shared-album"
         self.directory = "album"
-        self.queue_size = 3
+        self.queue_size = 1
         self.db = database
-        self.queue = queue.Queue(self.queue_size)
-        self.photos_queue = queue.Queue()
-        self.drop = [False] * max_threads
+        self.photo_indexes_queue = queue.Queue(self.queue_size)
+        self.shuffled_indexes_queue = Lockable()
+        self.max_threads = max_threads
         self.threads = []
 
     def get_cache_size(self):
@@ -32,7 +54,7 @@ class Downloader:
 
     def stop(self):
 
-        self.clear_queue()
+        self.drop_all()
         self.keep_running = False
 
         for thread in self.threads:
@@ -40,32 +62,29 @@ class Downloader:
 
     def set_loop_mode(self, mode, clear=True):
         self.loop_mode = mode
-        self.shuffle(clear)
+        self.clear_queues()
+        self.shuffle()
 
-    def clear_queue(self):
+    def drop_all(self):
+        self.clear_queues()
 
-        for i in range(len(self.drop)):
-            self.drop[i] = True
+    def clear_queues(self):
 
-        while not self.queue.empty():
-            self.queue.get()
+        while not self.photo_indexes_queue.empty():
+            self.photo_indexes_queue.get()
 
-        while not self.photos_queue.empty():
-            self.photos_queue.get()
+        while not self.shuffled_indexes_queue.empty():
+            self.shuffled_indexes_queue.get()
 
-    def shuffle0(self, clear=True):
-        if clear:
-            self.clear_queue()
+    def shuffle0(self):
         ids = self.db.get_ids_by_seen()
         random.shuffle(ids)
         for x in ids:
-            self.photos_queue.put(x)
+            self.shuffled_indexes_queue.put(x)
 
         print("DOWNLOADER: Running shuffle0")
 
-    def shuffle2(self, clear=True):
-        if clear:
-            self.clear_queue()
+    def shuffle2(self):
         remotes = self.db.get_remotes()
         for remote in remotes:
             albums = self.db.get_albums(remote)
@@ -74,28 +93,22 @@ class Downloader:
                 if active:
                     photo_ids = self.db.get_ids_by_album(remote, title)
                     for x in photo_ids:
-                        self.photos_queue.put(x)
+                        self.shuffled_indexes_queue.put(x)
 
     def play(self, remote, title):
         ids = self.db.get_ids_by_album(remote, title)
-
+        self.shuffled_indexes_queue.prepend(ids)
         print("DOWNLOADER: Playing", remote, title, len(ids))
-        self.clear_queue()
-        for id in ids:
-            self.photos_queue.put(id)
 
-    def shuffle(self, clear=True):
+    def shuffle(self):
         if self.loop_mode == 0:
-            self.shuffle0(clear)
+            self.shuffle0()
         elif self.loop_mode == 1:
-            self.shuffle1(clear)
+            self.shuffle1()
         elif self.loop_mode == 2:
-            self.shuffle2(clear)
+            self.shuffle2()
 
-    def shuffle1(self, clear=True):
-        if clear:
-            self.clear_queue()
-
+    def shuffle1(self):
         count, ids = 0, []
         remotes = self.db.get_remotes()
 
@@ -130,22 +143,26 @@ class Downloader:
             for album in ids:
                 next_id = album.next()
                 if next_id is not None:
-                    self.photos_queue.put(next_id)
+                    self.shuffled_indexes_queue.put(next_id)
 
     def start(self):
         # start the 5 producer tasks
-        for i in range(len(self.drop)):
+        for i in range(self.max_threads):
             thread = threading.Thread(target=self.download, args=(i,))
             self.threads.append(thread)
             thread.start()
 
-    def get(self, block=True):
-        if not block and self.queue.empty():
+    def get(self):
+        if self.shuffled_indexes_queue.empty():
+            self.shuffle()
+
+        if self.photo_indexes_queue.empty():
             return None
-        return self.queue.get()
+
+        return self.photo_indexes_queue.get()
 
     def is_empty(self):
-        return self.queue.empty()
+        return self.photo_indexes_queue.empty()
 
     def deal_with_heif(self, filename, output):
         ok, result = utils.run_command(["identify", "-format", '%w,%h', filename], stdout=True)
@@ -161,11 +178,12 @@ class Downloader:
 
         return utils.run_command(["convert"] + fmt + [filename, output])
 
+
     def download(self, _id):
         while self.keep_running:
 
             # Get next photo index
-            index = self.photos_queue.get()
+            index = self.shuffled_indexes_queue.get()
             info = self.db.get_info_from_id(index)
 
             # if info not found, skip
@@ -188,7 +206,7 @@ class Downloader:
                         continue
 
                 # put the index in the choose queue
-                self.queue.put(index)
+                self.photo_indexes_queue.put(index)
                 continue
 
             # if it is a remote file
@@ -198,7 +216,7 @@ class Downloader:
             # if the file already in the cache folder and continue
             if os.path.exists(cache_folder + file) or os.path.exists(cache_folder + file + ".jpg"):
                 print("DOWNLOADER: Image already in cache", cache_folder + file)
-                self.queue.put(index)
+                self.photo_indexes_queue.put(index)
                 continue
 
             # if it is not a jpg, jpeg, png or heic file, skip
@@ -226,7 +244,6 @@ class Downloader:
 
                 os.remove(filename)
 
-            print("DOWNLOADER: Ready to show", cache_folder + file, "with index", index)
             # Update the cache size
             ok, result = utils.run_command(['du', '-sm', 'cache'], stdout=True)
             if ok:
@@ -235,11 +252,5 @@ class Downloader:
 
             # if I don't need to drop the photo
             # put the index in the choose queue
-            if self.drop[_id]:
-                print("DOWNLOADER: Drop", index)
-                self.drop[_id] = False
-            else:
-                self.queue.put(index)
-                print("DOWNLOADER: Push", index, "size",self.queue.qsize())
-
+            self.photo_indexes_queue.put(index)
 
