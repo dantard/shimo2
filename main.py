@@ -481,7 +481,10 @@ class ImageWindow(QMainWindow):
         pixmap = QPixmap(prefix + folder + "/" + file)
 
         if not is_folder:
-            os.remove(prefix + folder + "/" + file)
+            print("CACHE SIZE:", self.downloader.get_cache_size())
+            if self.downloader.get_cache_size() > 1080:
+                os.remove(prefix + folder + "/" + file)
+                print("cache size exceeded, removing", prefix + folder + "/" + file)
 
         if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
             return False

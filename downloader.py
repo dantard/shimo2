@@ -13,6 +13,7 @@ class Downloader:
     MAX_THREADS = 5
 
     def __init__(self, database):
+        self.cache_size = 0
         self.loop_mode = 1
         self.directory = "shared-album"
         self.directory = "album"
@@ -21,6 +22,9 @@ class Downloader:
         self.queue = queue.Queue(self.queue_size)
         self.photos_queue = queue.Queue()
         self.drop = [False] * Downloader.MAX_THREADS
+
+    def get_cache_size(self):
+        return self.cache_size
 
     def set_loop_mode(self, mode):
         self.loop_mode = mode
@@ -130,7 +134,6 @@ class Downloader:
     def is_empty(self):
         return self.queue.empty()
 
-
     def deal_with_heif(self, filename, output):
         result = subprocess.run(["identify", "-format", '%w,%h', filename], stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True, check=True)
@@ -154,90 +157,96 @@ class Downloader:
 
     def download(self, _id):
         while True:
-            # print("TASK ", ids, "RUNNING")
 
+            # Get next photo index
             index = self.photos_queue.get()
             info = self.db.get_info_from_id(index)
 
+            # if info not found, skip
             if info is None:
                 continue
 
             remote, folder, file, hashed = info
 
+            # if it is a local file
             if remote.startswith("file:"):
                 filename = remote.replace("file:", "") + "/" + folder + "/" + file
+
+                # if for some reason the file does not exist, skip
+                if not os.path.exists(filename):
+                    continue
+
+                # if it is a heic file, convert it to jpg
                 if filename.endswith(".heic"):
-                    if not os.path.exists(filename + ".jpg"):
-                        subprocess.run(["convert", filename, filename + ".jpg"],
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE,
-                                       text=True)
-                        print("converted", filename, "to", filename + ".jpg")
+                    self.deal_with_heif(filename, filename + ".jpg")
+
+                # put the index in the choose queue
                 self.queue.put(index)
                 continue
 
+            # if it is a remote file
             file_ext = os.path.splitext(file.lower())[-1]
             cache_folder = "cache/" + folder + "/"
 
             if os.path.exists(cache_folder + file) or os.path.exists(cache_folder + file + ".jpg"):
-                # print("TASK", ids, "already downloaded", folder, file)
                 self.queue.put(index)
                 continue
 
+            # if it is not a jpg, jpeg, png or heic file, skip
             if file_ext not in [".jpg", ".jpeg", ".png", ".heic"]:
-                # print("TASK", ids, "skipping videos", file)
                 continue
 
-            # create directory folder
+            # create directory folder in case it does not exist
             os.makedirs(cache_folder, exist_ok=True)
 
+            # get the file from the remote
             result = subprocess.run(
                 ['rclone', "copy", remote + "/" + folder + "/" + file, cache_folder],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True)
 
+            # if the file was not downloaded, skip
             if result.returncode != 0:
                 continue
 
-            # result = subprocess.run(
-            #     ['du', "cache"],
-            #     stdout=subprocess.PIPE,
-            #     stderr=subprocess.PIPE,
-            #     text=True)
-
-
-            if file_ext in [".jpg", ".jpeg", ".png"]:
+            # if it is a heic file, convert it to jpg
+            if file_ext in [".heic"]:
                 filename = cache_folder + file
-            elif file_ext in [".heic"]:
-                filename = "cache/" + folder + "/" + file
 
                 if not self.deal_with_heif(filename, filename + ".jpg"):
-                    os.remove(cache_folder + file)
+                    os.remove(filename)
                     continue
 
-                os.remove(cache_folder + file)
-            else:
-                continue
+                os.remove(filename)
 
-            # try:
-            #     # resize the image to reduce workload
-            #     p = Pilmage.open(filename)
-            #     if p.width > p.height:
-            #         if p.height > 1080:
-            #             # landscape, resize in a way that the height is 1080 respecting the aspect ratio
-            #             p = p.resize((int(p.width * 1080 / p.height), 1080))
-            #     else:
-            #         if p.width > 1920:
-            #             # portrait, resize in a way that the width is 1920 respecting the aspect ratio
-            #             p = p.resize((1920, int(p.height * 1920 / p.width)))
-            #     # save the resized image
-            #     p.save(filename)
-            #     p.close()
-            # except:
-            #     pass
+            # Update the cache size
+            result = subprocess.run(
+                ['du', "-sm", "cache"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True)
 
+            size, _ = result.stdout.split("\t")
+            self.cache_size = int(size)
+
+            # if I don't need to drop the photo
+            # put the index in the choose queue
             if self.drop[_id]:
                 self.drop[_id] = False
             else:
                 self.queue.put(index)
+
+    def run_command(self, command):
+        if type(command) == str:
+            command = command.split(" ")
+        try:
+            result = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True)
+        except Exception as e:
+            pass
+
+        return result.returncode == 0, result.stdout, result.stderr
