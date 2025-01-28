@@ -1,6 +1,8 @@
 import subprocess
 from datetime import datetime
 
+import exifread
+
 
 def is_within_time_span(start_time, end_time, check_time=None):
     """
