@@ -87,14 +87,18 @@ class Database:
         self.connection.commit()
 
     def add_folder(self, folder):
+        self.lock.acquire()
         Cursor().execute('INSERT INTO remotes (name) VALUES (?)', ("file:"+folder,), commit=True, close=True)
+        self.lock.release()
 
     def update_folder(self, remote):
         sub_dirs = [(d, d) for d in os.listdir(remote) if os.path.isdir(os.path.join(remote, d))]
         self.update_albums("file:"+ remote, sub_dirs)
 
     def add_remote(self, remote):
+        self.lock.acquire()
         Cursor().execute('INSERT INTO remotes (name) VALUES (?)', (remote,), commit=True, close=True)
+        self.lock.release()
 
     def update_remote(self, remote):
 
@@ -110,6 +114,7 @@ class Database:
         self.update_albums(remote, folders)
 
     def update_albums(self, remote, folders):
+        self.lock.acquire()
         cursor = Cursor()
         cursor.execute('''UPDATE albums SET touched = ? where remote = ?''', (0, remote))
 
@@ -129,6 +134,7 @@ class Database:
         cursor.execute('DELETE FROM albums WHERE touched = 0 and remote = ?', (remote,))
 
         cursor.close(commit=True)
+        self.lock.release()
 
     def get_albums(self, remote):
         self.lock.acquire()
@@ -150,29 +156,33 @@ class Database:
         self.lock.release()
         return [x[0] for x in remotes]
 
-    def insert_recent(self, id):
-        cursor = Cursor()
-        cursor.execute('''DELETE FROM sequence
-            WHERE id NOT IN (
-            SELECT id
-            FROM sequence
-            ORDER BY date DESC
-            LIMIT 10
-        );''')
-        cursor.execute('INSERT INTO sequence (id, date) VALUES (?, ?)', (id, time.time()), commit=True, close=True)
-
-    def get_recent_ids(self):
-        ids = Cursor().fetch_all('SELECT id FROM sequence', close=True)
-        return [x[0] for x in ids]
+    # def insert_recent(self, id):
+    #     cursor = Cursor()
+    #     cursor.execute('''DELETE FROM sequence
+    #         WHERE id NOT IN (
+    #         SELECT id
+    #         FROM sequence
+    #         ORDER BY date DESC
+    #         LIMIT 10
+    #     );''')
+    #     cursor.execute('INSERT INTO sequence (id, date) VALUES (?, ?)', (id, time.time()), commit=True, close=True)
+    #
+    # def get_recent_ids(self):
+    #     ids = Cursor().fetch_all('SELECT id FROM sequence', close=True)
+    #     return [x[0] for x in ids]
 
     def remove_album(self, remote, album):
         # Delete from my_table all the file of the specified album
+        self.lock.acquire()
         Cursor().execute('DELETE FROM my_table WHERE remote = ? AND album = ?', (remote, album), commit=True,
                          close=True)
+        self.lock.release()
 
     def update_album_active(self, remote, album, active):
+        self.lock.acquire()
         Cursor().execute('UPDATE albums SET active = ? where remote = ? and title = ?', (active, remote, album),
                          commit=True, close=True)
+        self.lock.release()
 
     def update_folder_album(self, remote, album):
         path = remote.replace("file:", "") + "/" + album
@@ -219,9 +229,11 @@ class Database:
 
 
     def remove_remote(self, remote):
+        self.lock.acquire()
         Cursor().execute('DELETE FROM remotes WHERE name = ?', (remote,), commit=True, close=True)
         Cursor().execute('DELETE FROM albums WHERE remote = ?', (remote,), commit=True, close=True)
         Cursor().execute('DELETE FROM my_table WHERE remote = ?', (remote,), commit=True, close=True)
+        self.lock.release()
 
     def get_ids_by_album(self, remote, album):
         self.lock.acquire()

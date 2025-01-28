@@ -199,7 +199,10 @@ class RemoteDialog(QDialog):
                 album_item.setCheckState(0, Qt.Checked if active else Qt.Unchecked)
                 all_active = all_active and active
 
+            self.treeWidget.blockSignals(True)
             item.setCheckState(0,Qt.Checked if all_active else Qt.Unchecked)
+            self.treeWidget.blockSignals(False)
+
         self.treeWidget.expandAll()
 
     def check_all(self, item:QTreeWidgetItem):
