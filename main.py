@@ -79,7 +79,7 @@ class ImageWindow(QMainWindow):
         self.cfg_blur_out = animation.addSlider("blur_out", pretty="Blur out", default=5, min=0, max=10, den=1,
                                                 fmt="{:.0f}", label_width=40)
         self.loop_mode = animation.addCombobox("loop_mode", pretty="Loop Mode",
-                                               items=["Random", "One per Album", "Complete albums"])
+                                               items=["Random", "One per Album", "Complete albums"], default=0)
 
         self.config.load("shimo.yaml")
 

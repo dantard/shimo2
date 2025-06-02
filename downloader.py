@@ -102,6 +102,7 @@ class Downloader:
         print("DOWNLOADER: Playing", remote, title, len(ids))
 
     def shuffle(self):
+        print("DOWNLOADER: Running shuffle", self.loop_mode)
         if self.loop_mode == 0:
             self.shuffle0()
         elif self.loop_mode == 1:
